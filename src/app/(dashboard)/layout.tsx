@@ -1,10 +1,11 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useCompany } from '@/components/providers/CompanyProvider'
 import { logout } from '@/features/auth/actions'
+import { useTheme } from 'next-themes'
 import {
   LayoutDashboard,
   Link2,
@@ -20,6 +21,8 @@ import {
   Building,
   Menu,
   User,
+  Sun,
+  Moon,
 } from 'lucide-react'
 
 const NAVIGATION = [
@@ -40,6 +43,13 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname()
   const { companies, activeCompany, activeCompanyId, setActiveCompanyId, isLoading } = useCompany()
+  const { theme, setTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMounted(true)
+  }, [])
   
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -99,7 +109,7 @@ export default function DashboardLayout({
                 Switch Company
               </div>
               <div className="max-h-48 overflow-y-auto space-y-0.5">
-                {companies.map((company) => (
+                {companies.filter(c => c.status === 'active').map((company) => (
                   <button
                     key={company.id}
                     onClick={() => handleCompanySwitch(company.id)}
@@ -116,7 +126,7 @@ export default function DashboardLayout({
               </div>
               <div className="border-t border-border/60 pt-1.5 mt-1">
                 <Link
-                  href="/onboarding"
+                  href="/companies/new"
                   onClick={() => setSwitcherOpen(false)}
                   className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
                 >
@@ -179,6 +189,16 @@ export default function DashboardLayout({
           </div>
 
           <div className="flex items-center gap-4">
+            {/* Compact Theme Switcher */}
+            {mounted && (
+              <button
+                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-colors border border-border/40 cursor-pointer"
+                title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+              >
+                {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              </button>
+            )}
             {/* User Profile Badge */}
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center text-primary">

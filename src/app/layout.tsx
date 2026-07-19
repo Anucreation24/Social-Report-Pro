@@ -14,6 +14,8 @@ export const metadata: Metadata = {
   description: 'Connect your business social media accounts, track performance metrics, establish marketing goals, and generate professional marketing reports.',
 }
 
+import { ThemeProvider } from '@/components/providers/ThemeProvider'
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -23,6 +25,7 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${inter.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
       <body className="min-h-full bg-background text-foreground">
         <Suspense fallback={
@@ -30,9 +33,16 @@ export default function RootLayout({
             <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
           </div>
         }>
-          <CompanyProvider>
-            {children}
-          </CompanyProvider>
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="system"
+            enableSystem
+            disableTransitionOnChange
+          >
+            <CompanyProvider>
+              {children}
+            </CompanyProvider>
+          </ThemeProvider>
         </Suspense>
       </body>
     </html>

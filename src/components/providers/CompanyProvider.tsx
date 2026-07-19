@@ -67,7 +67,6 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
         .from('companies')
         .select('*')
         .in('id', companyIds)
-        .eq('status', 'active')
 
       if (companyError || !companyRecords) {
         console.error('Error fetching companies:', companyError)
@@ -78,25 +77,34 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
 
       setCompanies(companyRecords as Company[])
 
-      // Determine active company:
+      // Active companies are those with status === 'active'
+      const activeRecords = companyRecords.filter(c => c.status === 'active')
+
+      // Determine active company ID:
       // 1. From URL query param
       // 2. From localStorage
-      // 3. First company from DB
+      // 3. First active company from DB
       const urlCompanyId = searchParams.get('companyId')
       const storedCompanyId = localStorage.getItem('activeCompanyId')
       
       let selectedId: string | null = null
-      if (urlCompanyId && companyRecords.some(c => c.id === urlCompanyId)) {
+      if (urlCompanyId && activeRecords.some(c => c.id === urlCompanyId)) {
         selectedId = urlCompanyId
-      } else if (storedCompanyId && companyRecords.some(c => c.id === storedCompanyId)) {
+      } else if (storedCompanyId && activeRecords.some(c => c.id === storedCompanyId)) {
         selectedId = storedCompanyId
-      } else if (companyRecords.length > 0) {
-        selectedId = companyRecords[0].id
+      } else if (activeRecords.length > 0) {
+        selectedId = activeRecords[0].id
       }
 
       if (selectedId) {
         setActiveCompanyIdState(selectedId)
         localStorage.setItem('activeCompanyId', selectedId)
+      } else {
+        // No active company exists, redirect to onboarding or company creation
+        setActiveCompanyIdState(null)
+        if (!['/login', '/register', '/onboarding', '/forgot-password', '/reset-password', '/'].includes(pathname)) {
+          router.push('/onboarding')
+        }
       }
     } catch (err) {
       console.error('Failed to initialize companies context:', err)

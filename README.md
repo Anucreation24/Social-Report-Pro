@@ -93,7 +93,46 @@ src/
 
 ---
 
+---
+
 ## 🔒 Security Architecture
 - **Row Level Security (RLS)**: Enabled across all tables. Tenant isolation prevents companies from reading or writing other companies' data.
 - **Role Enforcement**: User actions are constrained by company roles (`owner`, `admin`, `marketing_manager`, `viewer`). Enforced both via server actions and database RLS.
 - **Audit Trails**: Security actions are recorded in `audit_logs` with automated token/credential redaction.
+- **Browser Storage Security**: Browser Local Storage only maintains the non-secret UI state (`activeCompanyId`), whilst Session Storage is entirely empty. All session authentication uses encrypted secure cookies, and API secret keys are isolated exclusively on the server.
+
+---
+
+## ⚙️ Settings Module & Appearance Theme
+- **Profile Configuration**: View account emails, update full names, customize avatars, and configure personal timezones.
+- **Company Management**: Owners and administrators can edit active company identity settings or soft-delete (archive) companies.
+- **Report & Notification Defaults**: Establish automated output preferences and customize in-app warning parameters.
+- **Theme Switcher**: Integrates `next-themes` to support Light, Dark, and System default appearance preferences seamlessly across the dashboard layout shell.
+
+---
+
+## 🏛️ Database Migrations
+1. **Initial Migration**: `supabase/migrations/20260719000000_init_schema.sql` establishes the initial SQL database structure and `handle_onboarding` RPC function.
+2. **Settings & Company Management Migration**: `supabase/migrations/20260719120000_stage1_settings_and_company_management.sql` establishes `updated_at` triggers, `create_additional_company` RPC function, and extra policies.
+
+To apply database tables, copy and paste the SQL content from **both** migration files into your Supabase **SQL Editor** and click **Run**.
+
+---
+
+## 🧪 Testing Commands
+Run node permission tests:
+```bash
+npm run test
+```
+Run eslint validation check:
+```bash
+npm run lint
+```
+Run typescript check:
+```bash
+npm run typecheck
+```
+Build the production bundle:
+```bash
+npm run build
+```
