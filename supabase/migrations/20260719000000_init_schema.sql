@@ -383,6 +383,11 @@ CREATE TABLE IF NOT EXISTS public.workspace_subscriptions (
 
 
 -- RLS ENABLING FOR ADDITIONAL TABLES
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.workspaces ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.workspace_members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.companies ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.company_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.platform_connections ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.social_accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.analytics_snapshots ENABLE ROW LEVEL SECURITY;
@@ -402,118 +407,111 @@ ALTER TABLE public.company_preferences ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.subscription_plans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.workspace_subscriptions ENABLE ROW LEVEL SECURITY;
 
--- POLICIES FOR ADDITIONAL TABLES
+-- POLICIES
+
+-- Profiles
+CREATE POLICY "Users can read their own profile" ON public.profiles FOR SELECT USING (id = auth.uid());
+CREATE POLICY "Users can update their own profile" ON public.profiles FOR UPDATE USING (id = auth.uid());
+
+-- Workspaces
+CREATE POLICY "Workspace members can view workspace" ON public.workspaces FOR SELECT USING (is_workspace_member(id));
+CREATE POLICY "Workspace owners/admins can update workspace" ON public.workspaces FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM public.workspace_members WHERE workspace_members.workspace_id = workspaces.id AND workspace_members.user_id = auth.uid() AND workspace_members.role IN ('owner', 'admin'))
+);
+CREATE POLICY "Authenticated users can create workspaces" ON public.workspaces FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+
+-- Workspace Members
+CREATE POLICY "Workspace members can read other members" ON public.workspace_members FOR SELECT USING (is_workspace_member(workspace_id));
+CREATE POLICY "Workspace owners/admins can manage members" ON public.workspace_members FOR ALL USING (
+    EXISTS (SELECT 1 FROM public.workspace_members WHERE workspace_members.workspace_id = workspace_members.workspace_id AND workspace_members.user_id = auth.uid() AND workspace_members.role IN ('owner', 'admin'))
+);
+
+-- Companies
+CREATE POLICY "Company members can read company" ON public.companies FOR SELECT USING (is_company_member(id));
+CREATE POLICY "Workspace members can insert companies" ON public.companies FOR INSERT WITH CHECK (
+    is_workspace_member(workspace_id) AND
+    EXISTS (SELECT 1 FROM public.workspace_members WHERE workspace_members.workspace_id = workspace_id AND workspace_members.user_id = auth.uid() AND workspace_members.role IN ('owner', 'admin'))
+);
+CREATE POLICY "Company owners/admins can update company" ON public.companies FOR UPDATE USING (has_company_role(id, ARRAY['owner', 'admin']));
+
+-- Company Members
+CREATE POLICY "Company members can view other company members" ON public.company_members FOR SELECT USING (is_company_member(company_id));
+CREATE POLICY "Company owners and admins can manage company members" ON public.company_members FOR ALL USING (has_company_role(company_id, ARRAY['owner', 'admin']));
 
 -- Platform Connections
-CREATE POLICY "Company members read connections" ON public.platform_connections
-    FOR SELECT USING (is_company_member(company_id));
-CREATE POLICY "Company managers manage connections" ON public.platform_connections
-    FOR ALL USING (has_company_role(company_id, ARRAY['owner', 'admin', 'marketing_manager']));
+CREATE POLICY "Company members read connections" ON public.platform_connections FOR SELECT USING (is_company_member(company_id));
+CREATE POLICY "Company managers manage connections" ON public.platform_connections FOR ALL USING (has_company_role(company_id, ARRAY['owner', 'admin', 'marketing_manager']));
 
 -- Social Accounts
-CREATE POLICY "Company members read social accounts" ON public.social_accounts
-    FOR SELECT USING (is_company_member(company_id));
-CREATE POLICY "Company managers manage social accounts" ON public.social_accounts
-    FOR ALL USING (has_company_role(company_id, ARRAY['owner', 'admin', 'marketing_manager']));
+CREATE POLICY "Company members read social accounts" ON public.social_accounts FOR SELECT USING (is_company_member(company_id));
+CREATE POLICY "Company managers manage social accounts" ON public.social_accounts FOR ALL USING (has_company_role(company_id, ARRAY['owner', 'admin', 'marketing_manager']));
 
 -- Analytics Snapshots
-CREATE POLICY "Company members read analytics" ON public.analytics_snapshots
-    FOR SELECT USING (is_company_member(company_id));
-CREATE POLICY "Company managers manage analytics" ON public.analytics_snapshots
-    FOR ALL USING (has_company_role(company_id, ARRAY['owner', 'admin', 'marketing_manager']));
+CREATE POLICY "Company members read analytics" ON public.analytics_snapshots FOR SELECT USING (is_company_member(company_id));
+CREATE POLICY "Company managers manage analytics" ON public.analytics_snapshots FOR ALL USING (has_company_role(company_id, ARRAY['owner', 'admin', 'marketing_manager']));
 
 -- Content Items
-CREATE POLICY "Company members read content" ON public.content_items
-    FOR SELECT USING (is_company_member(company_id));
-CREATE POLICY "Company managers manage content" ON public.content_items
-    FOR ALL USING (has_company_role(company_id, ARRAY['owner', 'admin', 'marketing_manager']));
+CREATE POLICY "Company members read content" ON public.content_items FOR SELECT USING (is_company_member(company_id));
+CREATE POLICY "Company managers manage content" ON public.content_items FOR ALL USING (has_company_role(company_id, ARRAY['owner', 'admin', 'marketing_manager']));
 
 -- Content Metrics
-CREATE POLICY "Company members read content metrics" ON public.content_metrics
-    FOR SELECT USING (EXISTS (SELECT 1 FROM public.content_items WHERE content_items.id = content_item_id AND is_company_member(content_items.company_id)));
-CREATE POLICY "Company managers manage content metrics" ON public.content_metrics
-    FOR ALL USING (EXISTS (SELECT 1 FROM public.content_items WHERE content_items.id = content_item_id AND has_company_role(content_items.company_id, ARRAY['owner', 'admin', 'marketing_manager'])));
+CREATE POLICY "Company members read content metrics" ON public.content_metrics FOR SELECT USING (EXISTS (SELECT 1 FROM public.content_items WHERE content_items.id = content_item_id AND is_company_member(content_items.company_id)));
+CREATE POLICY "Company managers manage content metrics" ON public.content_metrics FOR ALL USING (EXISTS (SELECT 1 FROM public.content_items WHERE content_items.id = content_item_id AND has_company_role(content_items.company_id, ARRAY['owner', 'admin', 'marketing_manager'])));
 
 -- Goals
-CREATE POLICY "Company members read goals" ON public.goals
-    FOR SELECT USING (is_company_member(company_id));
-CREATE POLICY "Company managers edit goals" ON public.goals
-    FOR INSERT WITH CHECK (has_company_role(company_id, ARRAY['owner', 'admin', 'marketing_manager']));
-CREATE POLICY "Company managers update goals" ON public.goals
-    FOR UPDATE USING (has_company_role(company_id, ARRAY['owner', 'admin', 'marketing_manager']));
-CREATE POLICY "Company owners delete goals" ON public.goals
-    FOR DELETE USING (has_company_role(company_id, ARRAY['owner', 'admin']));
+CREATE POLICY "Company members read goals" ON public.goals FOR SELECT USING (is_company_member(company_id));
+CREATE POLICY "Company managers edit goals" ON public.goals FOR INSERT WITH CHECK (has_company_role(company_id, ARRAY['owner', 'admin', 'marketing_manager']));
+CREATE POLICY "Company managers update goals" ON public.goals FOR UPDATE USING (has_company_role(company_id, ARRAY['owner', 'admin', 'marketing_manager']));
+CREATE POLICY "Company owners delete goals" ON public.goals FOR DELETE USING (has_company_role(company_id, ARRAY['owner', 'admin']));
 
 -- Report Definitions
-CREATE POLICY "Company members read report definitions" ON public.report_definitions
-    FOR SELECT USING (is_company_member(company_id));
-CREATE POLICY "Company managers manage report definitions" ON public.report_definitions
-    FOR ALL USING (has_company_role(company_id, ARRAY['owner', 'admin', 'marketing_manager']));
+CREATE POLICY "Company members read report definitions" ON public.report_definitions FOR SELECT USING (is_company_member(company_id));
+CREATE POLICY "Company managers manage report definitions" ON public.report_definitions FOR ALL USING (has_company_role(company_id, ARRAY['owner', 'admin', 'marketing_manager']));
 
 -- Generated Reports
-CREATE POLICY "Company members read reports" ON public.generated_reports
-    FOR SELECT USING (is_company_member(company_id));
-CREATE POLICY "Company managers generate reports" ON public.generated_reports
-    FOR INSERT WITH CHECK (has_company_role(company_id, ARRAY['owner', 'admin', 'marketing_manager']));
-CREATE POLICY "Company managers update reports" ON public.generated_reports
-    FOR UPDATE USING (has_company_role(company_id, ARRAY['owner', 'admin', 'marketing_manager']));
-CREATE POLICY "Company owners delete reports" ON public.generated_reports
-    FOR DELETE USING (has_company_role(company_id, ARRAY['owner', 'admin']));
+CREATE POLICY "Company members read reports" ON public.generated_reports FOR SELECT USING (is_company_member(company_id));
+CREATE POLICY "Company managers generate reports" ON public.generated_reports FOR INSERT WITH CHECK (has_company_role(company_id, ARRAY['owner', 'admin', 'marketing_manager']));
+CREATE POLICY "Company managers update reports" ON public.generated_reports FOR UPDATE USING (has_company_role(company_id, ARRAY['owner', 'admin', 'marketing_manager']));
+CREATE POLICY "Company owners delete reports" ON public.generated_reports FOR DELETE USING (has_company_role(company_id, ARRAY['owner', 'admin']));
 
 -- Report Exports
-CREATE POLICY "Company members read exports" ON public.report_exports
-    FOR SELECT USING (EXISTS (SELECT 1 FROM public.generated_reports WHERE generated_reports.id = generated_report_id AND is_company_member(generated_reports.company_id)));
-CREATE POLICY "Company managers manage exports" ON public.report_exports
-    FOR ALL USING (EXISTS (SELECT 1 FROM public.generated_reports WHERE generated_reports.id = generated_report_id AND has_company_role(generated_reports.company_id, ARRAY['owner', 'admin', 'marketing_manager'])));
+CREATE POLICY "Company members read exports" ON public.report_exports FOR SELECT USING (EXISTS (SELECT 1 FROM public.generated_reports WHERE generated_reports.id = generated_report_id AND is_company_member(generated_reports.company_id)));
+CREATE POLICY "Company managers manage exports" ON public.report_exports FOR ALL USING (EXISTS (SELECT 1 FROM public.generated_reports WHERE generated_reports.id = generated_report_id AND has_company_role(generated_reports.company_id, ARRAY['owner', 'admin', 'marketing_manager'])));
 
 -- Report Notes
-CREATE POLICY "Company members read notes" ON public.report_notes
-    FOR SELECT USING (is_company_member(company_id));
-CREATE POLICY "Company managers manage notes" ON public.report_notes
-    FOR ALL USING (has_company_role(company_id, ARRAY['owner', 'admin', 'marketing_manager']));
+CREATE POLICY "Company members read notes" ON public.report_notes FOR SELECT USING (is_company_member(company_id));
+CREATE POLICY "Company managers manage notes" ON public.report_notes FOR ALL USING (has_company_role(company_id, ARRAY['owner', 'admin', 'marketing_manager']));
 
 -- Notifications
-CREATE POLICY "Users read notifications" ON public.notifications
-    FOR SELECT USING (user_id = auth.uid());
-CREATE POLICY "Users manage notifications" ON public.notifications
-    FOR ALL USING (user_id = auth.uid());
+CREATE POLICY "Users read notifications" ON public.notifications FOR SELECT USING (user_id = auth.uid());
+CREATE POLICY "Users manage notifications" ON public.notifications FOR ALL USING (user_id = auth.uid());
 
 -- Sync Jobs
-CREATE POLICY "Company members read sync jobs" ON public.sync_jobs
-    FOR SELECT USING (is_company_member(company_id));
-CREATE POLICY "Company managers manage sync jobs" ON public.sync_jobs
-    FOR ALL USING (has_company_role(company_id, ARRAY['owner', 'admin', 'marketing_manager']));
+CREATE POLICY "Company members read sync jobs" ON public.sync_jobs FOR SELECT USING (is_company_member(company_id));
+CREATE POLICY "Company managers manage sync jobs" ON public.sync_jobs FOR ALL USING (has_company_role(company_id, ARRAY['owner', 'admin', 'marketing_manager']));
 
 -- Sync Logs
-CREATE POLICY "Company members read sync logs" ON public.sync_logs
-    FOR SELECT USING (is_company_member(company_id));
+CREATE POLICY "Company members read sync logs" ON public.sync_logs FOR SELECT USING (is_company_member(company_id));
 
 -- Audit Logs
-CREATE POLICY "Workspace members read audit logs" ON public.audit_logs
-    FOR SELECT USING (is_workspace_member(workspace_id));
+CREATE POLICY "Workspace members read audit logs" ON public.audit_logs FOR SELECT USING (is_workspace_member(workspace_id));
 
 -- User Preferences
-CREATE POLICY "Users read preferences" ON public.user_preferences
-    FOR SELECT USING (user_id = auth.uid());
-CREATE POLICY "Users manage preferences" ON public.user_preferences
-    FOR ALL USING (user_id = auth.uid());
+CREATE POLICY "Users read preferences" ON public.user_preferences FOR SELECT USING (user_id = auth.uid());
+CREATE POLICY "Users manage preferences" ON public.user_preferences FOR ALL USING (user_id = auth.uid());
 
 -- Company Preferences
-CREATE POLICY "Company members read company preferences" ON public.company_preferences
-    FOR SELECT USING (is_company_member(company_id));
-CREATE POLICY "Company owners manage company preferences" ON public.company_preferences
-    FOR ALL USING (has_company_role(company_id, ARRAY['owner', 'admin']));
+CREATE POLICY "Company members read company preferences" ON public.company_preferences FOR SELECT USING (is_company_member(company_id));
+CREATE POLICY "Company owners manage company preferences" ON public.company_preferences FOR ALL USING (has_company_role(company_id, ARRAY['owner', 'admin']));
 
 -- Subscription Plans
-CREATE POLICY "Plans are readable by authenticated" ON public.subscription_plans
-    FOR SELECT USING (auth.uid() IS NOT NULL);
+CREATE POLICY "Plans are readable by authenticated" ON public.subscription_plans FOR SELECT USING (auth.uid() IS NOT NULL);
 
 -- Workspace Subscriptions
-CREATE POLICY "Workspace members view subscriptions" ON public.workspace_subscriptions
-    FOR SELECT USING (is_workspace_member(workspace_id));
+CREATE POLICY "Workspace members view subscriptions" ON public.workspace_subscriptions FOR SELECT USING (is_workspace_member(workspace_id));
 
 
--- Triggers for Profile Creation on Signup
+-- TRIGGERS FOR PROFILE CREATION on signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER
 SECURITY DEFINER
@@ -561,3 +559,89 @@ DROP TRIGGER IF EXISTS on_auth_user_updated ON auth.users;
 CREATE TRIGGER on_auth_user_updated
   AFTER UPDATE ON auth.users
   FOR EACH ROW EXECUTE PROCEDURE public.handle_update_user();
+
+
+-- Seed initial subscription plan
+INSERT INTO public.subscription_plans (name, slug, features, max_companies, max_connections, max_users, is_active)
+VALUES ('Free Tier', 'free', '{"export_limits": 5, "platform_limits": 4}'::jsonb, 2, 4, 3, true)
+ON CONFLICT (slug) DO NOTHING;
+
+
+-- 24. Transaction-safe PostgreSQL Onboarding Function
+CREATE OR REPLACE FUNCTION public.handle_onboarding(
+    ws_name TEXT,
+    ws_slug TEXT,
+    company_name TEXT,
+    company_slug TEXT,
+    company_industry TEXT,
+    company_country TEXT,
+    company_timezone TEXT,
+    company_week_starts_on TEXT
+)
+RETURNS JSON
+SECURITY DEFINER
+SET search_path = public
+LANGUAGE plpgsql AS $$
+DECLARE
+    current_user_id UUID;
+    user_email TEXT;
+    created_ws_id UUID;
+    created_comp_id UUID;
+    default_plan_id UUID;
+BEGIN
+    -- 1. Check authentication
+    current_user_id := auth.uid();
+    IF current_user_id IS NULL THEN
+        RAISE EXCEPTION 'Not authenticated';
+    END IF;
+
+    -- Get user email from auth.users
+    SELECT email INTO user_email FROM auth.users WHERE id = current_user_id;
+
+    -- 2. Ensure profile exists (fallback in case trigger did not run)
+    INSERT INTO public.profiles (id, email)
+    VALUES (current_user_id, user_email)
+    ON CONFLICT (id) DO NOTHING;
+
+    -- 3. Create workspace
+    INSERT INTO public.workspaces (name, slug, created_by)
+    VALUES (ws_name, ws_slug, current_user_id)
+    RETURNING id INTO created_ws_id;
+
+    -- 4. Add user to workspace_members as owner
+    INSERT INTO public.workspace_members (workspace_id, user_id, role, status)
+    VALUES (created_ws_id, current_user_id, 'owner', 'active');
+
+    -- 5. Create company
+    INSERT INTO public.companies (workspace_id, name, slug, industry, country, timezone, week_starts_on, created_by)
+    VALUES (created_ws_id, company_name, company_slug, company_industry, company_country, company_timezone, company_week_starts_on, current_user_id)
+    RETURNING id INTO created_comp_id;
+
+    -- 6. Add user to company_members as owner
+    INSERT INTO public.company_members (company_id, user_id, role)
+    VALUES (created_comp_id, current_user_id, 'owner');
+
+    -- 7. Create default preferences and workspace subscriptions
+    INSERT INTO public.company_preferences (company_id, settings)
+    VALUES (created_comp_id, '{}'::jsonb)
+    ON CONFLICT (company_id) DO NOTHING;
+
+    INSERT INTO public.user_preferences (user_id, theme, personal_timezone, notification_settings)
+    VALUES (current_user_id, 'system', company_timezone, '{}'::jsonb)
+    ON CONFLICT (user_id) DO NOTHING;
+
+    -- Add default workspace subscription
+    SELECT id INTO default_plan_id FROM public.subscription_plans WHERE slug = 'free' LIMIT 1;
+    IF default_plan_id IS NOT NULL THEN
+        INSERT INTO public.workspace_subscriptions (workspace_id, plan_id, status)
+        VALUES (created_ws_id, default_plan_id, 'active')
+        ON CONFLICT (workspace_id) DO NOTHING;
+    END IF;
+
+    -- 8. Return result
+    RETURN json_build_object(
+        'workspace_id', created_ws_id,
+        'company_id', created_comp_id
+    );
+END;
+$$;

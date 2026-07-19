@@ -39,78 +39,24 @@ export async function createCompany(formData: FormData) {
     return { error: 'Unauthorized user session.' }
   }
 
-  // 1. Get user's first workspace
-  const { data: memberRecord, error: memberError } = await supabase
-    .from('workspace_members')
-    .select('workspace_id')
-    .eq('user_id', user.id)
-    .limit(1)
-    .single()
-
-  let workspaceId = memberRecord?.workspace_id
-
-  // If no workspace, create one
-  if (memberError || !workspaceId) {
-    const wsName = `${user.email?.split('@')[0]}'s Workspace`
-    const wsSlug = wsName.toLowerCase().replace(/[^a-z0-9]+/g, '-')
-    const { data: workspace, error: wsCreateError } = await supabase
-      .from('workspaces')
-      .insert({
-        name: wsName,
-        slug: wsSlug,
-        created_by: user.id,
-      })
-      .select()
-      .single()
-
-    if (wsCreateError || !workspace) {
-      return { error: wsCreateError?.message || 'Failed to create workspace.' }
-    }
-
-    workspaceId = workspace.id
-
-    // Add member
-    await supabase.from('workspace_members').insert({
-      workspace_id: workspace.id,
-      user_id: user.id,
-      role: 'owner',
-      status: 'active',
-    })
-  }
-
-  // 2. Insert company
+  const wsName = `${user.email?.split('@')[0]}'s Workspace`
+  const wsSlug = wsName.toLowerCase().replace(/[^a-z0-9]+/g, '-')
   const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
-  const { data: company, error: companyError } = await supabase
-    .from('companies')
-    .insert({
-      workspace_id: workspaceId,
-      name,
-      slug,
-      industry,
-      country,
-      timezone,
-      week_starts_on: weekStartsOn,
-      status: 'active',
-      created_by: user.id,
-    })
-    .select()
-    .single()
 
-  if (companyError || !company) {
-    return { error: companyError?.message || 'Failed to create company.' }
-  }
+  // Call the transaction-safe SQL onboarding RPC function
+  const { data: onboardingData, error: rpcError } = await supabase.rpc('handle_onboarding', {
+    ws_name: wsName,
+    ws_slug: wsSlug,
+    company_name: name,
+    company_slug: slug,
+    company_industry: industry,
+    company_country: country,
+    company_timezone: timezone,
+    company_week_starts_on: weekStartsOn
+  })
 
-  // 3. Add to company members as owner
-  const { error: memberError2 } = await supabase
-    .from('company_members')
-    .insert({
-      company_id: company.id,
-      user_id: user.id,
-      role: 'owner',
-    })
-
-  if (memberError2) {
-    return { error: memberError2.message }
+  if (rpcError || !onboardingData) {
+    return { error: rpcError?.message || 'Failed to complete onboarding transaction.' }
   }
 
   revalidatePath('/dashboard')
