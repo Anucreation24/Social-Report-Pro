@@ -44,7 +44,7 @@ const TIMEZONES = [
 export default function NewCompanyPage() {
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const { refreshCompanies, setActiveCompanyId } = useCompany()
+  const { refreshCompanies } = useCompany()
   const router = useRouter()
 
   const {
@@ -82,10 +82,17 @@ export default function NewCompanyPage() {
       if (res?.error) {
         setError(res.error)
       } else if (res?.success && res.companyId) {
-        // Refresh context and set active company
+        // Refresh context and navigate to dashboard with the new company selected
         await refreshCompanies()
-        setActiveCompanyId(res.companyId)
-        router.push('/dashboard')
+        localStorage.setItem('activeCompanyId', res.companyId)
+        try {
+          const p = router.push(`/dashboard?companyId=${res.companyId}`) as unknown
+          if (p && typeof (p as Promise<unknown>).catch === 'function') {
+            (p as Promise<unknown>).catch(() => {})
+          }
+        } catch {
+          // Ignore
+        }
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Something went wrong.')

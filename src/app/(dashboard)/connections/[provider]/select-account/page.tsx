@@ -58,7 +58,14 @@ export default function SelectAccountPage({ params }: SelectAccountPageProps) {
       if (res.error) {
         setError(res.error)
       } else {
-        router.push('/connections?success=true')
+        try {
+          const p = router.push('/connections?success=true') as unknown
+          if (p && typeof (p as Promise<unknown>).catch === 'function') {
+            (p as Promise<unknown>).catch(() => {})
+          }
+        } catch {
+          // Ignore
+        }
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to select social account.')

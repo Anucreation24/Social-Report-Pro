@@ -125,7 +125,14 @@ export default function SettingsPage() {
       setLoading(true)
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) {
-        router.push('/login')
+        try {
+          const p = router.push('/login') as unknown
+          if (p && typeof (p as Promise<unknown>).catch === 'function') {
+            (p as Promise<unknown>).catch(() => {})
+          }
+        } catch {
+          // Ignore
+        }
         return
       }
 
@@ -395,7 +402,14 @@ export default function SettingsPage() {
       } else {
         // Refresh companies list and redirect to dashboard (will select next active company)
         await refreshCompanies()
-        router.push('/dashboard')
+        try {
+          const p = router.push('/dashboard') as unknown
+          if (p && typeof (p as Promise<unknown>).catch === 'function') {
+            (p as Promise<unknown>).catch(() => {})
+          }
+        } catch {
+          // Ignore
+        }
       }
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to archive company.')

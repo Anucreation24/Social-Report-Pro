@@ -39,7 +39,14 @@ export default function ResetPasswordPage() {
       } else {
         setMessage('Password updated successfully! Redirecting...')
         setTimeout(() => {
-          router.push('/dashboard')
+          try {
+            const p = router.push('/dashboard') as unknown
+            if (p && typeof (p as Promise<unknown>).catch === 'function') {
+              (p as Promise<unknown>).catch(() => {})
+            }
+          } catch {
+            // Ignore
+          }
         }, 1500)
       }
     } catch (err: unknown) {

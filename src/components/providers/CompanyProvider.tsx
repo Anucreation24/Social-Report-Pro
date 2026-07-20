@@ -36,6 +36,18 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
   const searchParams = useSearchParams()
   const supabase = createClient()
 
+  // A helper that wraps next/navigation router.push and catches promise rejections (aborted routes)
+  const safePush = useCallback((url: string) => {
+    try {
+      const p = router.push(url) as unknown
+      if (p && typeof (p as Promise<unknown>).catch === 'function') {
+        (p as Promise<unknown>).catch(() => {})
+      }
+    } catch {
+      // Ignore synchronous navigation abort exceptions
+    }
+  }, [router])
+
   const fetchCompanies = useCallback(async () => {
     try {
       // Get current authenticated user
@@ -57,7 +69,7 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
         setIsLoading(false)
         // If we are not on login/register/onboarding, redirect to onboarding
         if (!['/login', '/register', '/onboarding', '/forgot-password', '/reset-password', '/'].includes(pathname)) {
-          router.push('/onboarding')
+          safePush('/onboarding')
         }
         return
       }
@@ -103,15 +115,15 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
         // No active company exists, redirect to onboarding or company creation
         setActiveCompanyIdState(null)
         if (!['/login', '/register', '/onboarding', '/forgot-password', '/reset-password', '/'].includes(pathname)) {
-          router.push('/onboarding')
+          safePush('/onboarding')
         }
       }
     } catch (err) {
-      console.error('Failed to initialize companies context:', err)
+      console.error('Failed to initialize companies context:', err instanceof Error ? err.message : 'Unexpected error')
     } finally {
       setIsLoading(false)
     }
-  }, [pathname, router, searchParams, supabase])
+  }, [pathname, searchParams, supabase, safePush])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -126,7 +138,7 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
       // Update URL query parameter
       const params = new URLSearchParams(searchParams.toString())
       params.set('companyId', id)
-      router.push(`${pathname}?${params.toString()}`)
+      safePush(`${pathname}?${params.toString()}`)
     }
   }
 

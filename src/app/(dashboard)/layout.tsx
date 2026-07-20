@@ -60,7 +60,11 @@ export default function DashboardLayout({
   }
 
   const handleLogout = async () => {
-    await logout()
+    try {
+      await logout()
+    } catch (err: unknown) {
+      console.error('Sign out failed:', err instanceof Error ? err.message : 'Unexpected error')
+    }
   }
 
   if (isLoading) {
