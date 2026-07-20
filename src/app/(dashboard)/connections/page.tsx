@@ -18,17 +18,21 @@ import {
   Settings, 
   Activity,
   Calendar,
-  ShieldCheck,
-  ShieldAlert
+  ShieldCheck
 } from 'lucide-react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 
+interface ProviderConfig {
+  isConfigured: boolean
+  keys: Record<string, boolean>
+}
+
 interface ConfigStatus {
-  facebook: boolean
-  instagram: boolean
-  youtube: boolean
-  tiktok: boolean
+  facebook: ProviderConfig
+  instagram: ProviderConfig
+  youtube: ProviderConfig
+  tiktok: ProviderConfig
 }
 
 interface DBConnection {
@@ -92,8 +96,32 @@ export default function ConnectionsPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionSuccess, setActionSuccess] = useState<string | null>(null)
   const [processingId, setProcessingId] = useState<string | null>(null)
+  const [modalProvider, setModalProvider] = useState<keyof typeof PROVIDER_INFO | null>(null)
 
   const isViewer = userRole === 'viewer'
+
+  const determineProviderStatus = useCallback((
+    key: keyof typeof PROVIDER_INFO,
+    isConfigured: boolean,
+    conn?: DBConnection
+  ): 'not_configured' | 'ready_to_connect' | 'connected' | 'expired' | 'error' | 'awaiting_account_selection' => {
+    if (!conn) {
+      return isConfigured ? 'ready_to_connect' : 'not_configured'
+    }
+    if (conn.connection_status === 'awaiting_account_selection') {
+      return 'awaiting_account_selection'
+    }
+    if (conn.connection_status === 'connected') {
+      return 'connected'
+    }
+    if (conn.connection_status === 'expired') {
+      return 'expired'
+    }
+    if (conn.connection_status === 'error' || conn.last_error_message_safe) {
+      return 'error'
+    }
+    return 'connected'
+  }, [])
 
   const loadData = useCallback(async () => {
     if (!activeCompany) return
@@ -218,12 +246,24 @@ export default function ConnectionsPage() {
     return <div className="text-center py-12 text-muted-foreground text-sm">Select a company first.</div>
   }
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: 'not_configured' | 'ready_to_connect' | 'connected' | 'expired' | 'error' | 'awaiting_account_selection') => {
     switch (status) {
       case 'connected':
         return (
           <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-2 py-0.5 rounded-full">
             <CheckCircle2 className="w-3 h-3" /> Connected
+          </span>
+        )
+      case 'ready_to_connect':
+        return (
+          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded-full">
+            <CheckCircle2 className="w-3 h-3" /> Ready to Connect
+          </span>
+        )
+      case 'not_configured':
+        return (
+          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-500 border border-amber-500/20 px-2 py-0.5 rounded-full">
+            <AlertCircle className="w-3 h-3" /> Not Configured
           </span>
         )
       case 'awaiting_account_selection':
@@ -238,23 +278,11 @@ export default function ConnectionsPage() {
             <XCircle className="w-3 h-3" /> Expired
           </span>
         )
-      case 'permission_required':
-        return (
-          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-rose-500/10 text-rose-500 border border-rose-500/20 px-2 py-0.5 rounded-full">
-            <ShieldAlert className="w-3 h-3" /> Scope Warning
-          </span>
-        )
-      case 'revoked':
-      case 'disconnected':
-        return (
-          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-muted text-muted-foreground border border-border/40 px-2 py-0.5 rounded-full">
-            <XCircle className="w-3 h-3" /> Disconnected
-          </span>
-        )
+      case 'error':
       default:
         return (
           <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-rose-500/10 text-rose-500 border border-rose-500/20 px-2 py-0.5 rounded-full">
-            <AlertCircle className="w-3 h-3" /> Failed
+            <AlertCircle className="w-3 h-3" /> Error
           </span>
         )
     }
@@ -298,10 +326,11 @@ export default function ConnectionsPage() {
           {(Object.keys(PROVIDER_INFO) as Array<keyof typeof PROVIDER_INFO>).map((key) => {
             const info = PROVIDER_INFO[key]
             const Icon = info.icon
-            const isConfigured = configs ? configs[key] : false
+            const isConfigured = configs ? configs[key].isConfigured : false
             
             const conn = connections.find((c) => c.provider === key && c.connection_status !== 'disconnected')
             const socialAcc = conn ? socialAccounts.find((sa) => sa.platform_connection_id === conn.id) : null
+            const status = determineProviderStatus(key, isConfigured, conn)
 
             return (
               <div 
@@ -320,14 +349,10 @@ export default function ConnectionsPage() {
                       </div>
                     </div>
                     <div>
-                      {conn ? getStatusBadge(conn.connection_status) : (
-                        <span className="text-[10px] font-bold uppercase tracking-wider bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
-                          Not Connected
-                        </span>
-                      )}
+                      {getStatusBadge(status)}
                     </div>
                   </div>
-
+ 
                   {/* Connected profile details panel */}
                   {conn && (
                     <div className="bg-muted/40 border border-border/40 rounded-xl p-3.5 space-y-2.5">
@@ -351,7 +376,7 @@ export default function ConnectionsPage() {
                           )}
                         </div>
                       </div>
-
+ 
                       <div className="grid grid-cols-2 gap-2 text-[10px] text-muted-foreground pt-1.5 border-t border-border/40">
                         <div className="flex items-center gap-1">
                           <ShieldCheck className="w-3.5 h-3.5" />
@@ -372,20 +397,23 @@ export default function ConnectionsPage() {
                       </div>
                     </div>
                   )}
-
+ 
                   {!conn && !isConfigured && (
-                    <div className="text-[10px] text-amber-500 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2.5 flex items-center gap-1.5">
+                    <button
+                      onClick={() => setModalProvider(key)}
+                      className="w-full text-left text-[10px] text-amber-500 bg-amber-500/10 hover:bg-amber-500/15 border border-amber-500/20 rounded-lg p-2.5 flex items-center gap-1.5 cursor-pointer transition-colors"
+                    >
                       <AlertCircle className="w-4 h-4 shrink-0" />
-                      <span>Provider configuration is required before this account can be connected.</span>
-                    </div>
+                      <span>Configuration required. Click to view missing keys.</span>
+                    </button>
                   )}
                 </div>
-
+ 
                 <div className="flex items-center justify-between pt-3 border-t border-border/40">
                   <span className="text-[10px] text-muted-foreground">
                     {!isConfigured ? 'Disabled' : conn ? 'Actions Available' : 'Ready'}
                   </span>
-
+ 
                   <div className="flex items-center gap-1.5">
                     {conn ? (
                       <>
@@ -410,7 +438,7 @@ export default function ConnectionsPage() {
                             <Settings className="w-3.5 h-3.5" /> Link Profile
                           </Link>
                         )}
-
+ 
                         <button
                           disabled={isViewer || processingId !== null}
                           onClick={() => handleDisconnect(conn.id, info.name)}
@@ -419,15 +447,22 @@ export default function ConnectionsPage() {
                           <Trash2 className="w-3.5 h-3.5" /> Disconnect
                         </button>
                       </>
+                    ) : !isConfigured ? (
+                      <button
+                        onClick={() => setModalProvider(key)}
+                        className="inline-flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-lg bg-secondary hover:bg-secondary/80 text-secondary-foreground border border-border/60 cursor-pointer transition-colors"
+                      >
+                        Configure Provider
+                      </button>
                     ) : (
                       <Link
-                        href={!isConfigured || isViewer ? '#' : `/api/oauth/${key}/start?companyId=${activeCompany.id}`}
-                        aria-disabled={!isConfigured || isViewer}
+                        href={isViewer ? '#' : `/api/oauth/${key}/start?companyId=${activeCompany.id}`}
+                        aria-disabled={isViewer}
                         onClick={(e) => {
-                          if (!isConfigured || isViewer) e.preventDefault()
+                          if (isViewer) e.preventDefault()
                         }}
                         className={`inline-flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${
-                          !isConfigured || isViewer
+                          isViewer
                             ? 'bg-muted text-muted-foreground cursor-not-allowed border border-border/40'
                             : 'bg-primary hover:bg-primary/90 text-primary-foreground cursor-pointer'
                         }`}
@@ -440,6 +475,60 @@ export default function ConnectionsPage() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Configure Provider Modal */}
+      {modalProvider && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-card/95 border border-border/80 rounded-2xl max-w-md w-full p-6 shadow-2xl relative overflow-hidden z-50 animate-in zoom-in-95 duration-200">
+            {/* Background glow decoration */}
+            <div className="absolute -top-12 -left-12 w-32 h-32 bg-primary/10 rounded-full blur-3xl" />
+            
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-bold text-foreground">
+                  Configure {PROVIDER_INFO[modalProvider].name}
+                </h3>
+                <button
+                  onClick={() => setModalProvider(null)}
+                  className="text-muted-foreground hover:text-foreground cursor-pointer transition-colors p-1.5 hover:bg-muted/50 rounded-lg"
+                >
+                  <XCircle className="w-5 h-5" />
+                </button>
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                To connect this platform, you must configure the following environment variables in your server configuration (e.g., your <code className="px-1 py-0.5 bg-muted rounded font-mono text-[10px]">.env.local</code> file).
+              </p>
+
+              <div className="space-y-2.5 pt-2">
+                {configs && configs[modalProvider] && Object.entries(configs[modalProvider].keys).map(([keyName, isPresent]) => (
+                  <div key={keyName} className="flex items-center justify-between p-2.5 bg-muted/40 border border-border/40 rounded-xl">
+                    <span className="font-mono text-xs font-semibold text-foreground">{keyName}</span>
+                    {isPresent ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Present
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-destructive bg-destructive/10 px-2 py-0.5 rounded-full border border-destructive/20">
+                        <AlertCircle className="w-3.5 h-3.5" /> Missing
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div className="pt-4 flex justify-end">
+                <button
+                  onClick={() => setModalProvider(null)}
+                  className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold px-4 py-2 rounded-xl cursor-pointer transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
