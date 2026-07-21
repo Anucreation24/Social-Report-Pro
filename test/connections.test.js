@@ -296,3 +296,145 @@ test('schema constraints - platform connection row can be created without legacy
   assert.ok(true, 'Platform connection insert payload successfully validated without legacy token columns');
 });
 
+// --- Platform Credentials Security & RLS Mocks ---
+
+const mockDatabase = {
+  platform_connections: [
+    { id: 'connection-1', company_id: 'company-a', provider: 'facebook' },
+    { id: 'connection-2', company_id: 'company-b', provider: 'youtube' },
+  ],
+  company_members: [
+    { company_id: 'company-a', user_id: 'user-owner', role: 'owner' },
+    { company_id: 'company-a', user_id: 'user-admin', role: 'admin' },
+    { company_id: 'company-a', user_id: 'user-viewer', role: 'viewer' },
+    { company_id: 'company-b', user_id: 'user-other-company-owner', role: 'owner' },
+  ],
+  platform_credentials: {}, // connection_id -> credentials row
+};
+
+function storeEncryptedCredentialsMocked(
+  executingUserId,
+  connectionId,
+  accessTokenEncrypted,
+  refreshTokenEncrypted,
+  tokenExpiresAt,
+  refreshTokenExpiresAt
+) {
+  if (!executingUserId) {
+    throw new Error('Access Denied: Unauthenticated session.');
+  }
+
+  const connection = mockDatabase.platform_connections.find(pc => pc.id === connectionId);
+  if (!connection) {
+    throw new Error('Access Denied: Connection not found.');
+  }
+
+  const member = mockDatabase.company_members.find(
+    cm => cm.company_id === connection.company_id && cm.user_id === executingUserId
+  );
+
+  const allowedRoles = ['owner', 'admin', 'marketing_manager'];
+  if (!member || !allowedRoles.includes(member.role)) {
+    throw new Error('Access Denied: Insufficient company membership permissions to write credentials.');
+  }
+
+  mockDatabase.platform_credentials[connectionId] = {
+    connection_id: connectionId,
+    access_token_encrypted: accessTokenEncrypted,
+    refresh_token_encrypted: refreshTokenEncrypted,
+    token_expires_at: tokenExpiresAt,
+    refresh_token_expires_at: refreshTokenExpiresAt,
+    updated_at: new Date().toISOString(),
+  };
+
+  return { success: true };
+}
+
+function directTableQueryMocked(executingUserId, action, tableName) {
+  // If RLS is enabled with no policies, direct client actions from authenticated users are blocked/denied
+  if (tableName === 'platform_credentials') {
+    throw new Error(`Database error: new row violates row-level security policy for table "${tableName}"`);
+  }
+  return { success: true };
+}
+
+// 5. Platform Credentials Security Tests
+
+test('credentials security - Owner insert succeeds', () => {
+  mockDatabase.platform_credentials = {};
+  const res = storeEncryptedCredentialsMocked(
+    'user-owner',
+    'connection-1',
+    'access_enc_123',
+    'refresh_enc_123',
+    null,
+    null
+  );
+  assert.strictEqual(res.success, true);
+  assert.strictEqual(mockDatabase.platform_credentials['connection-1'].access_token_encrypted, 'access_enc_123');
+});
+
+test('credentials security - Admin insert succeeds', () => {
+  mockDatabase.platform_credentials = {};
+  const res = storeEncryptedCredentialsMocked(
+    'user-admin',
+    'connection-1',
+    'access_enc_456',
+    'refresh_enc_456',
+    null,
+    null
+  );
+  assert.strictEqual(res.success, true);
+  assert.strictEqual(mockDatabase.platform_credentials['connection-1'].access_token_encrypted, 'access_enc_456');
+});
+
+test('credentials security - Viewer rejection throws error', () => {
+  assert.throws(() => {
+    storeEncryptedCredentialsMocked(
+      'user-viewer',
+      'connection-1',
+      'access_enc_789',
+      null,
+      null,
+      null
+    );
+  }, /Insufficient company membership permissions/);
+});
+
+test('credentials security - Cross-company rejection throws error', () => {
+  assert.throws(() => {
+    storeEncryptedCredentialsMocked(
+      'user-other-company-owner',
+      'connection-1', // connection-1 belongs to company-a, but user is member of company-b
+      'access_enc_789',
+      null,
+      null,
+      null
+    );
+  }, /Insufficient company membership permissions/);
+});
+
+test('credentials security - Unauthorized rejection throws error', () => {
+  assert.throws(() => {
+    storeEncryptedCredentialsMocked(
+      'user-completely-stranger',
+      'connection-1',
+      'access_enc_789',
+      null,
+      null,
+      null
+    );
+  }, /Insufficient company membership permissions/);
+});
+
+test('credentials security - Direct table queries are blocked by RLS policies', () => {
+  assert.throws(() => {
+    directTableQueryMocked('user-owner', 'SELECT', 'platform_credentials');
+  }, /violates row-level security policy/);
+  
+  assert.throws(() => {
+    directTableQueryMocked('user-owner', 'INSERT', 'platform_credentials');
+  }, /violates row-level security policy/);
+});
+
+

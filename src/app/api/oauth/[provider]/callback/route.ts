@@ -141,22 +141,20 @@ export async function GET(
     }
 
     try {
-      // 8. Securely encrypt credentials and upsert into the server-only platform_credentials table
+      // 8. Securely encrypt credentials and store/upsert them using the secure SECURITY DEFINER store_encrypted_credentials RPC function
       const encryptedAccess = encryptToken(tokenResult.accessToken)
       const encryptedRefresh = tokenResult.refreshToken ? encryptToken(tokenResult.refreshToken) : null
 
-      const { error: credErr } = await supabase
-        .from('platform_credentials')
-        .upsert({
-          connection_id: connectionId,
-          access_token_encrypted: encryptedAccess,
-          refresh_token_encrypted: encryptedRefreshTokenBody(encryptedRefresh, provider, tokenResult.accessToken), // Save encrypted token safely
-          token_expires_at: tokenResult.expiresIn ? new Date(Date.now() + tokenResult.expiresIn * 1000).toISOString() : null,
-          refresh_token_expires_at: tokenResult.refreshTokenExpiresIn ? new Date(Date.now() + tokenResult.refreshTokenExpiresIn * 1000).toISOString() : null,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'connection_id' })
+      const { error: credErr } = await supabase.rpc('store_encrypted_credentials', {
+        p_connection_id: connectionId,
+        p_access_token_encrypted: encryptedAccess,
+        p_refresh_token_encrypted: encryptedRefreshTokenBody(encryptedRefresh, provider, tokenResult.accessToken), // Save encrypted token safely
+        p_token_expires_at: tokenResult.expiresIn ? new Date(Date.now() + tokenResult.expiresIn * 1000).toISOString() : null,
+        p_refresh_token_expires_at: tokenResult.refreshTokenExpiresIn ? new Date(Date.now() + tokenResult.refreshTokenExpiresIn * 1000).toISOString() : null
+      })
 
       if (credErr) throw new Error(`Database error storing credentials: ${credErr.message}`)
+
 
       // 9. Discover available accounts from third-party API using fresh token
       const accounts = await connector.getAvailableAccounts(tokenResult.accessToken)
@@ -217,11 +215,10 @@ export async function GET(
       console.error(`Post-insert callback steps failed, rolling back/marking failed:`, postInsertErr)
       const errMsg = postInsertErr instanceof Error ? postInsertErr.message : 'Credentials storage or account discovery failed'
       
-      // Clean up credentials if they were inserted
-      await supabase
-        .from('platform_credentials')
-        .delete()
-        .eq('connection_id', connectionId)
+      // Clean up credentials using the secure delete_encrypted_credentials RPC if they were inserted
+      await supabase.rpc('delete_encrypted_credentials', {
+        p_connection_id: connectionId
+      })
 
       if (isNewConnection) {
         await supabase

@@ -65,10 +65,9 @@ export async function disconnectConnectionAction(connectionId: string) {
     }
 
     // 5. Completely delete credentials from the server-only platform_credentials table
-    const { error: deleteCredsErr } = await supabase
-      .from('platform_credentials')
-      .delete()
-      .eq('connection_id', connectionId)
+    const { error: deleteCredsErr } = await supabase.rpc('delete_encrypted_credentials', {
+      p_connection_id: connectionId
+    })
 
     if (deleteCredsErr) {
       console.warn(`Failed to delete credentials for ${connectionId}:`, deleteCredsErr)
