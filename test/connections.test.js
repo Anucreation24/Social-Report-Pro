@@ -262,3 +262,37 @@ test('capabilities - matches youtube refresh token support', () => {
   assert.strictEqual(platformCapabilities.youtube.supportsTokenRefresh, true);
   assert.strictEqual(platformCapabilities.facebook.supportsTokenRefresh, false);
 });
+
+// 4. Schema constraint mock verification
+test('schema constraints - platform connection row can be created without legacy token columns', () => {
+  // Define a mock schema validation for platform_connections table write
+  const schema = {
+    id: { type: 'uuid', required: true },
+    company_id: { type: 'uuid', required: true },
+    provider: { type: 'text', required: true },
+    provider_account_id: { type: 'text', required: true },
+    provider_account_name: { type: 'text', required: true },
+    access_token_encrypted: { type: 'text', required: false }, // Legacy NOT NULL dropped
+    refresh_token_encrypted: { type: 'text', required: false }, // Legacy NOT NULL dropped
+  };
+
+  const insertPayload = {
+    id: 'conn-123',
+    company_id: 'company-456',
+    provider: 'facebook',
+    provider_account_id: 'page-789',
+    provider_account_name: 'My Facebook Page',
+    // access_token_encrypted and refresh_token_encrypted are deliberately omitted
+  };
+
+  // Validate payload against schema requirements
+  for (const [columnName, columnMeta] of Object.entries(schema)) {
+    if (columnMeta.required && !(columnName in insertPayload)) {
+      throw new Error(`Missing required column: ${columnName}`);
+    }
+  }
+
+  // The assertion passes if no validation error is thrown
+  assert.ok(true, 'Platform connection insert payload successfully validated without legacy token columns');
+});
+

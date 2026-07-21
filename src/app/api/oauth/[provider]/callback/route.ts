@@ -81,11 +81,7 @@ export async function GET(
       return NextResponse.redirect(`${request.nextUrl.origin}/connections?error=No+eligible+pages+or+channels+found`)
     }
 
-    // 7. Store connection record
-    // If only one account exists, we select it automatically; otherwise, user selects it later.
-    const autoSelect = accounts.length === 1
-    const selectedAccount = autoSelect ? accounts[0] : null
-
+    // 7. Store connection record in pending status
     // Check if a connection already exists for this company & provider to avoid duplicates
     let existingConnection = null
     const { data: currentConns } = await supabase
@@ -100,16 +96,15 @@ export async function GET(
     }
 
     let connectionId: string
+    let isNewConnection = false
 
     if (existingConnection) {
-      // Update existing connection
+      // Update existing connection to pending status
       connectionId = existingConnection.id
       const { error: updateErr } = await supabase
         .from('platform_connections')
         .update({
-          provider_account_id: selectedAccount ? selectedAccount.id : 'pending',
-          provider_account_name: selectedAccount ? selectedAccount.name : 'Awaiting Selection',
-          connection_status: autoSelect ? 'connected' : 'awaiting_account_selection',
+          connection_status: 'pending',
           granted_scopes: tokenResult.scopes,
           token_expires_at: tokenResult.expiresIn ? new Date(Date.now() + tokenResult.expiresIn * 1000).toISOString() : null,
           refresh_token_expires_at: tokenResult.refreshTokenExpiresIn ? new Date(Date.now() + tokenResult.refreshTokenExpiresIn * 1000).toISOString() : null,
@@ -120,17 +115,18 @@ export async function GET(
         })
         .eq('id', connectionId)
 
-      if (updateErr) throw new Error(`Database error updating connection: ${updateErr.message}`)
+      if (updateErr) throw new Error(`Database error updating connection metadata: ${updateErr.message}`)
     } else {
-      // Insert new connection record
+      // Insert new connection record in pending status
+      isNewConnection = true
       const { data: newConn, error: insertErr } = await supabase
         .from('platform_connections')
         .insert({
           company_id: companyId,
           provider,
-          provider_account_id: selectedAccount ? selectedAccount.id : 'pending',
-          provider_account_name: selectedAccount ? selectedAccount.name : 'Awaiting Selection',
-          connection_status: autoSelect ? 'connected' : 'awaiting_account_selection',
+          provider_account_id: 'pending',
+          provider_account_name: 'Awaiting Selection',
+          connection_status: 'pending',
           granted_scopes: tokenResult.scopes,
           token_expires_at: tokenResult.expiresIn ? new Date(Date.now() + tokenResult.expiresIn * 1000).toISOString() : null,
           refresh_token_expires_at: tokenResult.refreshTokenExpiresIn ? new Date(Date.now() + tokenResult.refreshTokenExpiresIn * 1000).toISOString() : null,
@@ -144,55 +140,105 @@ export async function GET(
       connectionId = newConn.id
     }
 
-    // 8. Securely encrypt credentials and upsert into the server-only platform_credentials table
-    const encryptedAccess = encryptToken(tokenResult.accessToken)
-    const encryptedRefresh = tokenResult.refreshToken ? encryptToken(tokenResult.refreshToken) : null
+    try {
+      // 8. Securely encrypt credentials and upsert into the server-only platform_credentials table
+      const encryptedAccess = encryptToken(tokenResult.accessToken)
+      const encryptedRefresh = tokenResult.refreshToken ? encryptToken(tokenResult.refreshToken) : null
 
-    const { error: credErr } = await supabase
-      .from('platform_credentials')
-      .upsert({
-        connection_id: connectionId,
-        access_token_encrypted: encryptedAccess,
-        refresh_token_encrypted: encryptedRefreshTokenBody(encryptedRefresh, provider, tokenResult.accessToken), // Save encrypted token safely
-        token_expires_at: tokenResult.expiresIn ? new Date(Date.now() + tokenResult.expiresIn * 1000).toISOString() : null,
-        refresh_token_expires_at: tokenResult.refreshTokenExpiresIn ? new Date(Date.now() + tokenResult.refreshTokenExpiresIn * 1000).toISOString() : null,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'connection_id' })
-
-    if (credErr) throw new Error(`Database error storing credentials: ${credErr.message}`)
-
-    // 9. If auto-selected, update the selected social_account record directly
-    if (autoSelect && selectedAccount) {
-      await supabase
-        .from('social_accounts')
+      const { error: credErr } = await supabase
+        .from('platform_credentials')
         .upsert({
-          company_id: companyId,
-          platform_connection_id: connectionId,
-          provider,
-          provider_account_id: selectedAccount.id,
-          name: selectedAccount.name,
-          username: selectedAccount.username || '',
-          profile_image_url: selectedAccount.profileImageUrl || '',
-          account_url: selectedAccount.accountUrl || '',
-          is_selected: true,
-          is_active: true,
-          capabilities: selectedAccount.capabilities,
-          provider_metadata: selectedAccount.providerMetadata || {}
-        }, { onConflict: 'company_id,platform_connection_id,provider_account_id' })
+          connection_id: connectionId,
+          access_token_encrypted: encryptedAccess,
+          refresh_token_encrypted: encryptedRefreshTokenBody(encryptedRefresh, provider, tokenResult.accessToken), // Save encrypted token safely
+          token_expires_at: tokenResult.expiresIn ? new Date(Date.now() + tokenResult.expiresIn * 1000).toISOString() : null,
+          refresh_token_expires_at: tokenResult.refreshTokenExpiresIn ? new Date(Date.now() + tokenResult.refreshTokenExpiresIn * 1000).toISOString() : null,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'connection_id' })
 
-      await logAuditAction({
-        companyId,
-        action: 'platform_connected',
-        entityType: 'platform_connection',
-        entityId: connectionId,
-        summary: `Platform connected and account auto-linked: ${selectedAccount.name} (${provider})`,
-      })
+      if (credErr) throw new Error(`Database error storing credentials: ${credErr.message}`)
 
-      return NextResponse.redirect(`${request.nextUrl.origin}/connections?success=true`)
+      // 9. Discover available accounts from third-party API using fresh token
+      const accounts = await connector.getAvailableAccounts(tokenResult.accessToken)
+      if (accounts.length === 0) {
+        throw new Error('No eligible pages or channels found')
+      }
+
+      const autoSelect = accounts.length === 1
+      const selectedAccount = autoSelect ? accounts[0] : null
+
+      // 10. Update connection status and account mapping details
+      const { error: statusErr } = await supabase
+        .from('platform_connections')
+        .update({
+          provider_account_id: selectedAccount ? selectedAccount.id : 'pending',
+          provider_account_name: selectedAccount ? selectedAccount.name : 'Awaiting Selection',
+          connection_status: autoSelect ? 'connected' : 'awaiting_account_selection'
+        })
+        .eq('id', connectionId)
+
+      if (statusErr) throw new Error(`Database error updating connection status: ${statusErr.message}`)
+
+      // 11. If auto-selected, update the selected social_account record directly
+      if (autoSelect && selectedAccount) {
+        await supabase
+          .from('social_accounts')
+          .upsert({
+            company_id: companyId,
+            platform_connection_id: connectionId,
+            provider,
+            provider_account_id: selectedAccount.id,
+            name: selectedAccount.name,
+            username: selectedAccount.username || '',
+            profile_image_url: selectedAccount.profileImageUrl || '',
+            account_url: selectedAccount.accountUrl || '',
+            is_selected: true,
+            is_active: true,
+            capabilities: selectedAccount.capabilities,
+            provider_metadata: selectedAccount.providerMetadata || {}
+          }, { onConflict: 'company_id,platform_connection_id,provider_account_id' })
+
+        await logAuditAction({
+          companyId,
+          action: 'platform_connected',
+          entityType: 'platform_connection',
+          entityId: connectionId,
+          summary: `Platform connected and account auto-linked: ${selectedAccount.name} (${provider})`,
+        })
+
+        return NextResponse.redirect(`${request.nextUrl.origin}/connections?success=true`)
+      }
+
+      // 12. If multiple accounts exist, redirect to the account-selection flow page
+      return NextResponse.redirect(`${request.nextUrl.origin}/connections/${provider}/select-account?connectionId=${connectionId}`)
+
+    } catch (postInsertErr: unknown) {
+      // Rollback: if credential storage or account discovery fails, delete connection (if new) or mark failed
+      console.error(`Post-insert callback steps failed, rolling back/marking failed:`, postInsertErr)
+      const errMsg = postInsertErr instanceof Error ? postInsertErr.message : 'Credentials storage or account discovery failed'
+      
+      // Clean up credentials if they were inserted
+      await supabase
+        .from('platform_credentials')
+        .delete()
+        .eq('connection_id', connectionId)
+
+      if (isNewConnection) {
+        await supabase
+          .from('platform_connections')
+          .delete()
+          .eq('id', connectionId)
+      } else {
+        await supabase
+          .from('platform_connections')
+          .update({
+            connection_status: 'failed',
+            connection_error: errMsg
+          })
+          .eq('id', connectionId)
+      }
+      throw postInsertErr
     }
-
-    // 10. If multiple accounts exist, redirect to the account-selection flow page
-    return NextResponse.redirect(`${request.nextUrl.origin}/connections/${provider}/select-account?connectionId=${connectionId}`)
   } catch (err: unknown) {
     console.error(`OAuth callback flow failed for ${provider}:`, err)
     const msg = err instanceof Error ? err.message : 'Internal callback error'
