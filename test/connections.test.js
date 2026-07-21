@@ -388,6 +388,26 @@ test('credentials security - Admin insert succeeds', () => {
   assert.strictEqual(mockDatabase.platform_credentials['connection-1'].access_token_encrypted, 'access_enc_456');
 });
 
+test('credentials security - Marketing Manager insert succeeds', () => {
+  // Setup marketing manager role
+  mockDatabase.company_members.push({ company_id: 'company-a', user_id: 'user-manager', role: 'marketing_manager' });
+  mockDatabase.platform_credentials = {};
+  
+  const res = storeEncryptedCredentialsMocked(
+    'user-manager',
+    'connection-1',
+    'access_enc_manager',
+    null,
+    null,
+    null
+  );
+  assert.strictEqual(res.success, true);
+  assert.strictEqual(mockDatabase.platform_credentials['connection-1'].access_token_encrypted, 'access_enc_manager');
+  
+  // Clean up mockDatabase for other tests
+  mockDatabase.company_members = mockDatabase.company_members.filter(cm => cm.user_id !== 'user-manager');
+});
+
 test('credentials security - Viewer rejection throws error', () => {
   assert.throws(() => {
     storeEncryptedCredentialsMocked(
@@ -401,24 +421,24 @@ test('credentials security - Viewer rejection throws error', () => {
   }, /Insufficient company membership permissions/);
 });
 
-test('credentials security - Cross-company rejection throws error', () => {
+test('credentials security - Unauthenticated rejection throws error', () => {
   assert.throws(() => {
     storeEncryptedCredentialsMocked(
-      'user-other-company-owner',
-      'connection-1', // connection-1 belongs to company-a, but user is member of company-b
+      null, // null user
+      'connection-1',
       'access_enc_789',
       null,
       null,
       null
     );
-  }, /Insufficient company membership permissions/);
+  }, /Unauthenticated session/);
 });
 
-test('credentials security - Unauthorized rejection throws error', () => {
+test('credentials security - Cross-company rejection throws error', () => {
   assert.throws(() => {
     storeEncryptedCredentialsMocked(
-      'user-completely-stranger',
-      'connection-1',
+      'user-other-company-owner',
+      'connection-1', // belongs to company-a, user is member of company-b
       'access_enc_789',
       null,
       null,
@@ -436,5 +456,54 @@ test('credentials security - Direct table queries are blocked by RLS policies', 
     directTableQueryMocked('user-owner', 'INSERT', 'platform_credentials');
   }, /violates row-level security policy/);
 });
+
+test('credentials security - Upsert behavior updates existing record instead of creating duplicates', () => {
+  mockDatabase.platform_credentials = {};
+  
+  // First insert
+  storeEncryptedCredentialsMocked(
+    'user-owner',
+    'connection-1',
+    'access_enc_first',
+    null,
+    null,
+    null
+  );
+  
+  // Second insert (upsert)
+  storeEncryptedCredentialsMocked(
+    'user-owner',
+    'connection-1',
+    'access_enc_updated',
+    null,
+    null,
+    null
+  );
+  
+  // Verify only one entry exists for connection-1 with the updated value
+  const credsKeys = Object.keys(mockDatabase.platform_credentials);
+  assert.strictEqual(credsKeys.length, 1);
+  assert.strictEqual(credsKeys[0], 'connection-1');
+  assert.strictEqual(mockDatabase.platform_credentials['connection-1'].access_token_encrypted, 'access_enc_updated');
+});
+
+test('credentials security - store function never returns encrypted values', () => {
+  mockDatabase.platform_credentials = {};
+  const res = storeEncryptedCredentialsMocked(
+    'user-owner',
+    'connection-1',
+    'super-secret-token',
+    null,
+    null,
+    null
+  );
+  
+  // Verify return value is just a safe success structure/ID and contains no secret tokens
+  assert.ok(res.success);
+  assert.strictEqual(res.access_token_encrypted, undefined);
+  assert.strictEqual(res.refresh_token_encrypted, undefined);
+  assert.strictEqual(JSON.stringify(res).includes('super-secret-token'), false);
+});
+
 
 
