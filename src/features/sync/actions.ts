@@ -37,12 +37,14 @@ export async function triggerManualSyncAction(connectionId: string, daysToFetch:
       daysToFetch
     })
 
-    if (!result.success) {
+    if (!result.success && result.status === 'failed') {
       return { error: result.safeErrorMessage || 'Manual sync failed.' }
     }
 
     return {
       success: true,
+      status: result.status,
+      warningMessage: result.safeErrorMessage,
       recordsCreated: result.recordsCreated,
       contentItemsImported: result.contentItemsImported
     }

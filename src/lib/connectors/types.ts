@@ -78,20 +78,23 @@ export interface SocialPlatformConnector {
     connectionId: string,
     accessToken: string,
     providerAccountId: string,
-    range: DateRange
+    range: DateRange,
+    providerMetadata?: Record<string, unknown>
   ): Promise<NormalizedAccountMetricResult[]>
   fetchContent(
     connectionId: string,
     accessToken: string,
     providerAccountId: string,
-    range: DateRange
+    range: DateRange,
+    providerMetadata?: Record<string, unknown>
   ): Promise<NormalizedContentItem[]>
   fetchContentMetrics(
     connectionId: string,
     accessToken: string,
     providerAccountId: string,
     providerContentIds: string[],
-    range: DateRange
+    range: DateRange,
+    providerMetadata?: Record<string, unknown>
   ): Promise<NormalizedContentMetric[]>
 }
 

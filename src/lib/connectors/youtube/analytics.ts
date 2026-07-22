@@ -69,53 +69,55 @@ export async function fetchYoutubeAccountMetrics(
   // 2. Fetch daily report metrics from YouTube Analytics API
   const analyticsUrl = `https://youtubeanalytics.googleapis.com/v1/reports?ids=channel==MINE&startDate=${range.startDate}&endDate=${range.endDate}&metrics=views,estimatedMinutesWatched,averageViewDuration,subscribersGained,subscribersLost,likes,comments,shares&dimensions=day`
 
-  try {
-    const analyticsRes = await fetch(analyticsUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    })
+  const analyticsRes = await fetch(analyticsUrl, {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  })
 
-    if (analyticsRes.ok) {
-      const json = await analyticsRes.json()
-      const columnHeaders = (json.columnHeaders || []).map((h: { name: string }) => h.name)
-      const rows = json.rows || []
-
-      for (const row of rows) {
-        const dayIdx = columnHeaders.indexOf('day')
-        if (dayIdx === -1) continue
-        const dateStr = row[dayIdx]
-
-        let entry = resultsMap.get(dateStr)
-        if (!entry) {
-          entry = { snapshotDate: dateStr, aggregationLevel: 'daily', metrics: [] }
-          resultsMap.set(dateStr, entry)
-        }
-
-        columnHeaders.forEach((colName: string, idx: number) => {
-          if (colName === 'day') return
-          const rawVal = normalizeMetricValue(row[idx])
-
-          if (colName === 'views') {
-            entry.metrics.push({ name: 'views', value: rawVal, providerMetricName: colName })
-          } else if (colName === 'estimatedMinutesWatched') {
-            entry.metrics.push({ name: 'watch_time_seconds', value: rawVal * 60, unit: 'seconds', providerMetricName: colName })
-          } else if (colName === 'averageViewDuration') {
-            entry.metrics.push({ name: 'average_view_duration_seconds', value: rawVal, unit: 'seconds', providerMetricName: colName })
-          } else if (colName === 'subscribersGained') {
-            entry.metrics.push({ name: 'audience_gained', value: rawVal, providerMetricName: colName })
-          } else if (colName === 'subscribersLost') {
-            entry.metrics.push({ name: 'audience_lost', value: rawVal, providerMetricName: colName })
-          } else if (colName === 'likes') {
-            entry.metrics.push({ name: 'likes', value: rawVal, providerMetricName: colName })
-          } else if (colName === 'comments') {
-            entry.metrics.push({ name: 'comments', value: rawVal, providerMetricName: colName })
-          } else if (colName === 'shares') {
-            entry.metrics.push({ name: 'shares', value: rawVal, providerMetricName: colName })
-          }
-        })
-      }
+  if (!analyticsRes.ok) {
+    const json = await analyticsRes.json().catch(() => ({}))
+    console.warn(`YouTube Analytics API response status ${analyticsRes.status}:`, json?.error?.message || analyticsRes.statusText)
+    if (analyticsRes.status === 401 || analyticsRes.status === 403 || json?.error?.code === 403) {
+      throw new Error('Videos imported, but YouTube Analytics permission is missing. Reconnect the channel and grant analytics read access.')
     }
-  } catch (err) {
-    console.warn('Failed to fetch YouTube Analytics API report:', err)
+  } else {
+    const json = await analyticsRes.json()
+    const columnHeaders = (json.columnHeaders || []).map((h: { name: string }) => h.name)
+    const rows = json.rows || []
+
+    for (const row of rows) {
+      const dayIdx = columnHeaders.indexOf('day')
+      if (dayIdx === -1) continue
+      const dateStr = row[dayIdx]
+
+      let entry = resultsMap.get(dateStr)
+      if (!entry) {
+        entry = { snapshotDate: dateStr, aggregationLevel: 'daily', metrics: [] }
+        resultsMap.set(dateStr, entry)
+      }
+
+      columnHeaders.forEach((colName: string, idx: number) => {
+        if (colName === 'day') return
+        const rawVal = normalizeMetricValue(row[idx])
+
+        if (colName === 'views') {
+          entry.metrics.push({ name: 'views', value: rawVal, providerMetricName: colName })
+        } else if (colName === 'estimatedMinutesWatched') {
+          entry.metrics.push({ name: 'watch_time_seconds', value: rawVal * 60, unit: 'seconds', providerMetricName: colName })
+        } else if (colName === 'averageViewDuration') {
+          entry.metrics.push({ name: 'average_view_duration_seconds', value: rawVal, unit: 'seconds', providerMetricName: colName })
+        } else if (colName === 'subscribersGained') {
+          entry.metrics.push({ name: 'audience_gained', value: rawVal, providerMetricName: colName })
+        } else if (colName === 'subscribersLost') {
+          entry.metrics.push({ name: 'audience_lost', value: rawVal, providerMetricName: colName })
+        } else if (colName === 'likes') {
+          entry.metrics.push({ name: 'likes', value: rawVal, providerMetricName: colName })
+        } else if (colName === 'comments') {
+          entry.metrics.push({ name: 'comments', value: rawVal, providerMetricName: colName })
+        } else if (colName === 'shares') {
+          entry.metrics.push({ name: 'shares', value: rawVal, providerMetricName: colName })
+        }
+      })
+    }
   }
 
   return Array.from(resultsMap.values())

@@ -36,25 +36,30 @@ export function getFacebookAnalyticsCapabilities(): ProviderAnalyticsCapabilitie
 export async function fetchFacebookAccountMetrics(
   accessToken: string,
   providerAccountId: string,
-  range: DateRange
+  range: DateRange,
+  providerMetadata?: Record<string, unknown>
 ): Promise<NormalizedAccountMetricResult[]> {
   const apiVersion = process.env.META_GRAPH_API_VERSION || 'v21.0'
-  const pageUrl = `https://graph.facebook.com/${apiVersion}/${providerAccountId}?fields=followers_count,fan_count&access_token=${accessToken}`
+  const tokenToUse = (providerMetadata?.pageAccessToken as string) || accessToken
+
+  const pageUrl = `https://graph.facebook.com/${apiVersion}/${providerAccountId}?fields=followers_count,fan_count&access_token=${tokenToUse}`
 
   let followersCount = 0
-  try {
-    const pageRes = await fetch(pageUrl)
-    if (pageRes.ok) {
-      const pageData = await pageRes.json()
-      followersCount = pageData.followers_count || pageData.fan_count || 0
+  const pageRes = await fetch(pageUrl)
+  if (!pageRes.ok) {
+    const errJson = await pageRes.json().catch(() => ({}))
+    const code = errJson?.error?.code
+    if (code === 190 || code === 200 || code === 100 || pageRes.status === 401 || pageRes.status === 403) {
+      throw new Error('Reconnect required — additional Facebook permissions are needed.')
     }
-  } catch (e) {
-    console.warn('Failed to fetch Facebook Page followers count:', e)
+  } else {
+    const pageData = await pageRes.json()
+    followersCount = pageData.followers_count ?? pageData.fan_count ?? 0
   }
 
   // Attempt to fetch page insights (daily metrics)
   const insightsMetrics = 'page_impressions_unique,page_impressions,page_post_engagements,page_video_views'
-  const insightsUrl = `https://graph.facebook.com/${apiVersion}/${providerAccountId}/insights?metric=${insightsMetrics}&period=day&since=${range.startDate}&until=${range.endDate}&access_token=${accessToken}`
+  const insightsUrl = `https://graph.facebook.com/${apiVersion}/${providerAccountId}/insights?metric=${insightsMetrics}&period=day&since=${range.startDate}&until=${range.endDate}&access_token=${tokenToUse}`
 
   const resultsMap = new Map<string, NormalizedAccountMetricResult>()
 
@@ -84,7 +89,6 @@ export async function fetchFacebookAccountMetrics(
         const values = item.values || []
 
         for (const valNode of values) {
-          // end_time is in format "2026-07-20T07:00:00+0000"
           const dateStr = (valNode.end_time || '').split('T')[0]
           if (!dateStr) continue
 
@@ -107,8 +111,14 @@ export async function fetchFacebookAccountMetrics(
           }
         }
       }
+    } else {
+      const json = await res.json().catch(() => ({}))
+      console.warn(`Facebook Page Insights API warning for ${providerAccountId}:`, json?.error?.message || res.statusText)
     }
-  } catch (err) {
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message.includes('Reconnect required')) {
+      throw err
+    }
     console.warn('Failed to fetch Facebook Page insights:', err)
   }
 
@@ -118,14 +128,21 @@ export async function fetchFacebookAccountMetrics(
 export async function fetchFacebookContent(
   accessToken: string,
   providerAccountId: string,
-  _range: DateRange
+  _range: DateRange,
+  providerMetadata?: Record<string, unknown>
 ): Promise<NormalizedContentItem[]> {
   const apiVersion = process.env.META_GRAPH_API_VERSION || 'v21.0'
-  const postsUrl = `https://graph.facebook.com/${apiVersion}/${providerAccountId}/published_posts?fields=id,message,created_time,permalink_url,full_picture,attachments{media_type}&limit=50&access_token=${accessToken}`
+  const tokenToUse = (providerMetadata?.pageAccessToken as string) || accessToken
+
+  const postsUrl = `https://graph.facebook.com/${apiVersion}/${providerAccountId}/published_posts?fields=id,message,created_time,permalink_url,full_picture,attachments{media_type}&limit=50&access_token=${tokenToUse}`
 
   try {
     const res = await fetch(postsUrl)
-    if (!res.ok) return []
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      console.warn('Facebook published_posts fetch error:', err?.error?.message || res.statusText)
+      return []
+    }
     const json = await res.json()
     const posts = json.data || []
 
@@ -164,14 +181,16 @@ export async function fetchFacebookContentMetrics(
   accessToken: string,
   _providerAccountId: string,
   providerContentIds: string[],
-  _range: DateRange
+  _range: DateRange,
+  providerMetadata?: Record<string, unknown>
 ): Promise<NormalizedContentMetric[]> {
   const apiVersion = process.env.META_GRAPH_API_VERSION || 'v21.0'
+  const tokenToUse = (providerMetadata?.pageAccessToken as string) || accessToken
   const results: NormalizedContentMetric[] = []
   const todayStr = new Date().toISOString().split('T')[0]
 
   for (const postId of providerContentIds.slice(0, 20)) {
-    const postMetricUrl = `https://graph.facebook.com/${apiVersion}/${postId}?fields=reactions.summary(true),comments.summary(true),shares&access_token=${accessToken}`
+    const postMetricUrl = `https://graph.facebook.com/${apiVersion}/${postId}?fields=reactions.summary(true),comments.summary(true),shares&access_token=${tokenToUse}`
     try {
       const res = await fetch(postMetricUrl)
       if (res.ok) {

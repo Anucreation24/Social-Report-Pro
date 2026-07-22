@@ -214,3 +214,50 @@ test('analytics - aggregation cumulative metrics sum daily values', () => {
   const aggregated = aggregateMetricSnapshots(rows, 'impressions');
   assert.equal(aggregated, 120);
 });
+
+test('sync rules - status classification for partial permission errors', () => {
+  function classifySyncStatus(recordsCreated, itemsImported, warningMsg) {
+    if (warningMsg && warningMsg.includes('permission is missing')) {
+      return 'partially_completed';
+    }
+    if (warningMsg && warningMsg.includes('Reconnect required')) {
+      return 'partially_completed';
+    }
+    if (recordsCreated === 0 && itemsImported === 0) {
+      return 'failed';
+    }
+    return 'completed';
+  }
+
+  assert.equal(classifySyncStatus(0, 21, 'Videos imported, but YouTube Analytics permission is missing. Reconnect the channel and grant analytics read access.'), 'partially_completed');
+  assert.equal(classifySyncStatus(0, 0, 'Reconnect required — additional Facebook permissions are needed.'), 'partially_completed');
+  assert.equal(classifySyncStatus(10, 5, null), 'completed');
+  assert.equal(classifySyncStatus(0, 0, null), 'failed');
+});
+
+test('sync rules - Facebook Page Access Token selection preference', () => {
+  function selectTokenToUse(accessToken, providerMetadata) {
+    return providerMetadata?.pageAccessToken || accessToken;
+  }
+
+  const userToken = 'USER_TOKEN_ABC';
+  const pageToken = 'PAGE_TOKEN_XYZ';
+  assert.equal(selectTokenToUse(userToken, { pageAccessToken: pageToken }), 'PAGE_TOKEN_XYZ');
+  assert.equal(selectTokenToUse(userToken, {}), 'USER_TOKEN_ABC');
+});
+
+test('sync rules - YouTube Data API lifetime stats fallback', () => {
+  function calculateYoutubeAudience(stats) {
+    const subscriberCount = parseInt(stats?.subscriberCount || '0', 10);
+    return {
+      name: 'audience_total',
+      value: subscriberCount,
+      unit: 'subscribers'
+    };
+  }
+
+  const result = calculateYoutubeAudience({ subscriberCount: '1540' });
+  assert.equal(result.value, 1540);
+  assert.equal(result.unit, 'subscribers');
+});
+

@@ -179,16 +179,16 @@ export class FacebookConnector implements SocialPlatformConnector {
     return getFacebookAnalyticsCapabilities()
   }
 
-  public async fetchAccountMetrics(connectionId: string, accessToken: string, providerAccountId: string, range: DateRange) {
-    return fetchFacebookAccountMetrics(accessToken, providerAccountId, range)
+  public async fetchAccountMetrics(connectionId: string, accessToken: string, providerAccountId: string, range: DateRange, providerMetadata?: Record<string, unknown>) {
+    return fetchFacebookAccountMetrics(accessToken, providerAccountId, range, providerMetadata)
   }
 
-  public async fetchContent(connectionId: string, accessToken: string, providerAccountId: string, range: DateRange) {
-    return fetchFacebookContent(accessToken, providerAccountId, range)
+  public async fetchContent(connectionId: string, accessToken: string, providerAccountId: string, range: DateRange, providerMetadata?: Record<string, unknown>) {
+    return fetchFacebookContent(accessToken, providerAccountId, range, providerMetadata)
   }
 
-  public async fetchContentMetrics(connectionId: string, accessToken: string, providerAccountId: string, providerContentIds: string[], range: DateRange) {
-    return fetchFacebookContentMetrics(accessToken, providerAccountId, providerContentIds, range)
+  public async fetchContentMetrics(connectionId: string, accessToken: string, providerAccountId: string, providerContentIds: string[], range: DateRange, providerMetadata?: Record<string, unknown>) {
+    return fetchFacebookContentMetrics(accessToken, providerAccountId, providerContentIds, range, providerMetadata)
   }
 }
 

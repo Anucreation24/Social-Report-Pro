@@ -299,6 +299,9 @@ export default function ConnectionsPage() {
       const res = await triggerManualSyncAction(connId, 30)
       if (res.error) {
         setActionError(`Sync failed for ${providerName}: ${res.error}`)
+      } else if (res.status === 'partially_completed' || res.warningMessage) {
+        setActionError(`Sync partially completed for ${providerName}: ${res.warningMessage || 'Some metrics require additional provider permissions.'}`)
+        loadData()
       } else {
         setActionSuccess(`Successfully synced ${providerName}! Ingested ${res.recordsCreated} metrics & ${res.contentItemsImported} content items.`)
         loadData()
