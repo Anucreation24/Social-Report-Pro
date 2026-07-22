@@ -87,7 +87,50 @@ EXCEPTION WHEN OTHERS THEN NULL;
 END $$;
 
 
--- 3. Re-assert Row Level Security Policies
+-- 3. Align public.analytics_snapshots Column Nullability
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'analytics_snapshots' AND column_name = 'provider_account_id') THEN
+        ALTER TABLE public.analytics_snapshots ALTER COLUMN provider_account_id DROP NOT NULL;
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'analytics_snapshots' AND column_name = 'aggregation_period') THEN
+        ALTER TABLE public.analytics_snapshots ALTER COLUMN aggregation_period DROP NOT NULL;
+    END IF;
+END $$;
+
+-- Re-assert Unique Index for analytics_snapshots
+CREATE UNIQUE INDEX IF NOT EXISTS idx_analytics_snapshots_unique_snapshot
+ON public.analytics_snapshots (company_id, social_account_id, provider, snapshot_date, aggregation_level, metric_name);
+
+
+-- 4. Align public.content_items Column Nullability
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'content_items' AND column_name = 'provider_account_id') THEN
+        ALTER TABLE public.content_items ALTER COLUMN provider_account_id DROP NOT NULL;
+    END IF;
+END $$;
+
+-- Re-assert Unique Index for content_items
+CREATE UNIQUE INDEX IF NOT EXISTS idx_content_items_unique_provider_content
+ON public.content_items (provider, social_account_id, provider_content_id);
+
+
+-- 5. Align public.content_metrics Column Nullability
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'content_metrics' AND column_name = 'snapshot_date') THEN
+        ALTER TABLE public.content_metrics ALTER COLUMN snapshot_date DROP NOT NULL;
+    END IF;
+END $$;
+
+-- Re-assert Unique Index for content_metrics
+CREATE UNIQUE INDEX IF NOT EXISTS idx_content_metrics_unique_metric
+ON public.content_metrics (content_item_id, metric_date, metric_name);
+
+
+-- 6. Re-assert Row Level Security Policies
 ALTER TABLE public.sync_jobs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sync_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.analytics_snapshots ENABLE ROW LEVEL SECURITY;
@@ -113,6 +156,36 @@ CREATE POLICY "Company members read sync logs" ON public.sync_logs
 
 CREATE POLICY "Company managers manage sync logs" ON public.sync_logs 
     FOR ALL USING (has_company_role(company_id, ARRAY['owner', 'admin', 'marketing_manager']));
+
+-- Analytics Snapshots RLS
+DROP POLICY IF EXISTS "Company members read analytics" ON public.analytics_snapshots;
+DROP POLICY IF EXISTS "Company managers manage analytics" ON public.analytics_snapshots;
+
+CREATE POLICY "Company members read analytics" ON public.analytics_snapshots 
+    FOR SELECT USING (is_company_member(company_id));
+
+CREATE POLICY "Company managers manage analytics" ON public.analytics_snapshots 
+    FOR ALL USING (has_company_role(company_id, ARRAY['owner', 'admin', 'marketing_manager']));
+
+-- Content Items RLS
+DROP POLICY IF EXISTS "Company members read content" ON public.content_items;
+DROP POLICY IF EXISTS "Company managers manage content" ON public.content_items;
+
+CREATE POLICY "Company members read content" ON public.content_items 
+    FOR SELECT USING (is_company_member(company_id));
+
+CREATE POLICY "Company managers manage content" ON public.content_items 
+    FOR ALL USING (has_company_role(company_id, ARRAY['owner', 'admin', 'marketing_manager']));
+
+-- Content Metrics RLS
+DROP POLICY IF EXISTS "Company members read content metrics" ON public.content_metrics;
+DROP POLICY IF EXISTS "Company managers manage content metrics" ON public.content_metrics;
+
+CREATE POLICY "Company members read content metrics" ON public.content_metrics 
+    FOR SELECT USING (company_id IS NOT NULL AND is_company_member(company_id));
+
+CREATE POLICY "Company managers manage content metrics" ON public.content_metrics 
+    FOR ALL USING (company_id IS NOT NULL AND has_company_role(company_id, ARRAY['owner', 'admin', 'marketing_manager']));
 
 -- Reload PostgREST schema cache
 NOTIFY pgrst, 'reload schema';

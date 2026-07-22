@@ -37,7 +37,7 @@ export async function executePlatformSync(
   // 1. Fetch connection details
   const { data: conn, error: connErr } = await supabase
     .from('platform_connections')
-    .select('id, company_id, provider, provider_account_id, connection_status, token_expires_at')
+    .select('id, company_id, provider, provider_account_id, provider_account_name, connection_status, token_expires_at')
     .eq('id', connectionId)
     .single()
 
@@ -55,7 +55,8 @@ export async function executePlatformSync(
 
   const provider = conn.provider as SocialPlatform
 
-  // 2. Fetch associated social account
+  // 2. Fetch or auto-resolve associated social account
+  let socialAccount = null
   const { data: socialAccounts } = await supabase
     .from('social_accounts')
     .select('id, provider_account_id, provider_metadata')
@@ -63,8 +64,46 @@ export async function executePlatformSync(
     .eq('is_selected', true)
     .limit(1)
 
-  const socialAccount = socialAccounts && socialAccounts.length > 0 ? socialAccounts[0] : null
+  if (socialAccounts && socialAccounts.length > 0) {
+    socialAccount = socialAccounts[0]
+  } else if (conn.provider_account_id && conn.provider_account_id !== 'pending') {
+    // Try finding any social account for this connection
+    const { data: fallbackAccounts } = await supabase
+      .from('social_accounts')
+      .select('id, provider_account_id, provider_metadata')
+      .eq('platform_connection_id', connectionId)
+      .limit(1)
+
+    if (fallbackAccounts && fallbackAccounts.length > 0) {
+      socialAccount = fallbackAccounts[0]
+      await supabase
+        .from('social_accounts')
+        .update({ is_selected: true })
+        .eq('id', socialAccount.id)
+    } else {
+      // Auto-upsert social_account row for this connection
+      const { data: newAcc, error: accErr } = await supabase
+        .from('social_accounts')
+        .upsert({
+          company_id: companyId,
+          platform_connection_id: connectionId,
+          provider,
+          provider_account_id: conn.provider_account_id,
+          name: conn.provider_account_name || provider,
+          is_selected: true,
+          is_active: true
+        }, { onConflict: 'company_id,platform_connection_id,provider_account_id' })
+        .select('id, provider_account_id, provider_metadata')
+        .single()
+
+      if (!accErr && newAcc) {
+        socialAccount = newAcc
+      }
+    }
+  }
+
   const socialAccountId = socialAccount?.id || null
+  const providerAccountId = socialAccount?.provider_account_id || conn.provider_account_id
   const providerMetadata = (socialAccount?.provider_metadata || {}) as Record<string, unknown>
 
   // 3. Create sync_jobs record in 'running' status
@@ -87,19 +126,32 @@ export async function executePlatformSync(
 
   if (jobErr || !jobId) {
     console.error('Failed to create sync_job:', jobErr)
-  } else {
-    // Write initial log (populating both legacy and Stage 3 schema columns safely)
-    await supabase.from('sync_logs').insert({
-      sync_job_id: jobId,
-      company_id: companyId,
-      platform: provider,
-      provider,
-      status: 'info',
-      level: 'info',
-      step: 'initiation',
-      log_message: `Sync job started for ${provider}`,
-      safe_message: `Sync job started for ${provider}`
-    })
+    return {
+      success: false,
+      jobId: '',
+      status: 'failed',
+      recordsCreated: 0,
+      contentItemsImported: 0,
+      errorCategory: 'database_write_error',
+      safeErrorMessage: `Database error creating sync_job: ${jobErr?.message || 'Insert failed'}`
+    }
+  }
+
+  // Write initial log
+  const { error: logErr } = await supabase.from('sync_logs').insert({
+    sync_job_id: jobId,
+    company_id: companyId,
+    platform: provider,
+    provider,
+    status: 'info',
+    level: 'info',
+    step: 'initiation',
+    log_message: `Sync job started for ${provider}`,
+    safe_message: `Sync job started for ${provider}`
+  })
+
+  if (logErr) {
+    console.warn('Sync log insert warning:', logErr)
   }
 
   try {
@@ -109,7 +161,7 @@ export async function executePlatformSync(
     })
 
     if (credsErr || !creds || creds.length === 0 || !creds[0].access_token_encrypted) {
-      throw new Error('No valid connection credentials found.')
+      throw new Error(`No valid connection credentials found: ${credsErr?.message || 'Empty credentials'}`)
     }
 
     let decryptedAccess = decryptToken(creds[0].access_token_encrypted)
@@ -133,19 +185,17 @@ export async function executePlatformSync(
           p_refresh_token_expires_at: null
         })
 
-        if (jobId) {
-          await supabase.from('sync_logs').insert({
-            sync_job_id: jobId,
-            company_id: companyId,
-            platform: provider,
-            provider,
-            status: 'info',
-            level: 'info',
-            step: 'token_refresh',
-            log_message: `Access token refreshed successfully for ${provider}`,
-            safe_message: `Access token refreshed successfully for ${provider}`
-          })
-        }
+        await supabase.from('sync_logs').insert({
+          sync_job_id: jobId,
+          company_id: companyId,
+          platform: provider,
+          provider,
+          status: 'info',
+          level: 'info',
+          step: 'token_refresh',
+          log_message: `Access token refreshed successfully for ${provider}`,
+          safe_message: `Access token refreshed successfully for ${provider}`
+        })
       } catch (refreshErr) {
         console.warn(`Token auto-refresh notice for ${provider}:`, refreshErr)
       }
@@ -166,165 +216,186 @@ export async function executePlatformSync(
     let isPartial = false
     let partialWarningMessage = ''
 
+    if (!socialAccountId) {
+      throw new Error(`Cannot execute sync: No social account found for connection ${connectionId}`)
+    }
+
     // 6. Fetch and save account metrics
-    if (socialAccountId) {
-      try {
-        const accountMetricResults = await connector.fetchAccountMetrics(
-          connectionId,
-          decryptedAccess,
-          conn.provider_account_id,
-          range,
-          providerMetadata
-        )
+    try {
+      const accountMetricResults = await connector.fetchAccountMetrics(
+        connectionId,
+        decryptedAccess,
+        providerAccountId,
+        range,
+        providerMetadata
+      )
 
-        const saveSnapshotsRes = await saveAccountSnapshotsIdempotent(supabase, {
-          companyId,
-          socialAccountId,
-          platformConnectionId: connectionId,
-          provider,
-          results: accountMetricResults
-        })
+      const saveSnapshotsRes = await saveAccountSnapshotsIdempotent(supabase, {
+        companyId,
+        socialAccountId,
+        providerAccountId,
+        platformConnectionId: connectionId,
+        provider,
+        results: accountMetricResults
+      })
 
-        recordsCreated += saveSnapshotsRes.count
-      } catch (metricsErr: unknown) {
-        const msg = metricsErr instanceof Error ? metricsErr.message : 'Account metrics fetch failed'
-        isPartial = true
-        partialWarningMessage = msg
-        if (jobId) {
-          await supabase.from('sync_logs').insert({
-            sync_job_id: jobId,
-            company_id: companyId,
-            platform: provider,
-            provider,
-            status: 'warning',
-            level: 'warning',
-            step: 'account_metrics',
-            log_message: msg,
-            safe_message: msg
-          })
-        }
+      if (saveSnapshotsRes.error) {
+        throw new Error(`Database error saving analytics_snapshots: ${saveSnapshotsRes.error}`)
       }
+
+      recordsCreated += saveSnapshotsRes.count
+    } catch (metricsErr: unknown) {
+      const msg = metricsErr instanceof Error ? metricsErr.message : 'Account metrics fetch failed'
+      if (msg.includes('Database error')) {
+        throw metricsErr
+      }
+      isPartial = true
+      partialWarningMessage = msg
+      await supabase.from('sync_logs').insert({
+        sync_job_id: jobId,
+        company_id: companyId,
+        platform: provider,
+        provider,
+        status: 'warning',
+        level: 'warning',
+        step: 'account_metrics',
+        log_message: msg,
+        safe_message: msg
+      })
     }
 
     // 7. Fetch and save content items
-    if (socialAccountId) {
-      try {
-        const contentItems = await connector.fetchContent(
+    try {
+      const contentItems = await connector.fetchContent(
+        connectionId,
+        decryptedAccess,
+        providerAccountId,
+        range,
+        providerMetadata
+      )
+
+      const saveContentRes = await saveContentItemsIdempotent(supabase, {
+        companyId,
+        socialAccountId,
+        providerAccountId,
+        platformConnectionId: connectionId,
+        provider,
+        items: contentItems
+      })
+
+      if (saveContentRes.error) {
+        throw new Error(`Database error saving content_items: ${saveContentRes.error}`)
+      }
+
+      contentItemsImported = contentItems.length
+
+      // 8. Fetch and save content metrics
+      const contentIds = contentItems.map(item => item.providerContentId)
+      if (contentIds.length > 0) {
+        const contentMetrics = await connector.fetchContentMetrics(
           connectionId,
           decryptedAccess,
-          conn.provider_account_id,
+          providerAccountId,
+          contentIds,
           range,
           providerMetadata
         )
 
-        const saveContentRes = await saveContentItemsIdempotent(supabase, {
-          companyId,
-          socialAccountId,
-          platformConnectionId: connectionId,
-          provider,
-          items: contentItems
-        })
+        const saveContentMetricsRes = await saveContentMetricsIdempotent(
+          supabase,
+          { companyId, contentMetrics },
+          saveContentRes.itemMap
+        )
 
-        contentItemsImported = contentItems.length
-
-        // 8. Fetch and save content metrics
-        const contentIds = contentItems.map(item => item.providerContentId)
-        if (contentIds.length > 0) {
-          const contentMetrics = await connector.fetchContentMetrics(
-            connectionId,
-            decryptedAccess,
-            conn.provider_account_id,
-            contentIds,
-            range,
-            providerMetadata
-          )
-
-          const saveContentMetricsRes = await saveContentMetricsIdempotent(
-            supabase,
-            { companyId, contentMetrics },
-            saveContentRes.itemMap
-          )
-
-          recordsCreated += saveContentMetricsRes.count
+        if (saveContentMetricsRes.error) {
+          throw new Error(`Database error saving content_metrics: ${saveContentMetricsRes.error}`)
         }
-      } catch (contentErr: unknown) {
-        const msg = contentErr instanceof Error ? contentErr.message : 'Content items fetch failed'
-        isPartial = true
-        if (!partialWarningMessage) partialWarningMessage = msg
-        if (jobId) {
-          await supabase.from('sync_logs').insert({
-            sync_job_id: jobId,
-            company_id: companyId,
-            platform: provider,
-            provider,
-            status: 'warning',
-            level: 'warning',
-            step: 'content_ingestion',
-            log_message: msg,
-            safe_message: msg
-          })
-        }
+
+        recordsCreated += saveContentMetricsRes.count
       }
+    } catch (contentErr: unknown) {
+      const msg = contentErr instanceof Error ? contentErr.message : 'Content items fetch failed'
+      if (msg.includes('Database error')) {
+        throw contentErr
+      }
+      isPartial = true
+      if (!partialWarningMessage) partialWarningMessage = msg
+      await supabase.from('sync_logs').insert({
+        sync_job_id: jobId,
+        company_id: companyId,
+        platform: provider,
+        provider,
+        status: 'warning',
+        level: 'warning',
+        step: 'content_ingestion',
+        log_message: msg,
+        safe_message: msg
+      })
+    }
+
+    // Determine final status
+    let finalJobStatus: 'completed' | 'partially_completed' | 'failed' = 'completed'
+    if (isPartial) {
+      finalJobStatus = 'partially_completed'
+    } else if (recordsCreated === 0 && contentItemsImported === 0) {
+      finalJobStatus = 'failed'
+      partialWarningMessage = 'No metric points or content items were returned by the provider.'
     }
 
     // 9. Update platform_connections status
-    const finalJobStatus = isPartial ? 'partially_completed' : 'completed'
-
     await supabase
       .from('platform_connections')
       .update({
-        last_successful_sync_at: new Date().toISOString(),
+        last_successful_sync_at: finalJobStatus !== 'failed' ? new Date().toISOString() : undefined,
         last_sync_attempt_at: new Date().toISOString(),
-        connection_status: isPartial ? 'connected' : 'connected',
+        connection_status: 'connected',
         last_error_code: isPartial ? 'partial_permissions' : null,
         last_error_message_safe: isPartial ? partialWarningMessage : null
       })
       .eq('id', connectionId)
 
     // 10. Finalize sync_job
-    if (jobId) {
-      await supabase
-        .from('sync_jobs')
-        .update({
-          status: finalJobStatus,
-          completed_at: new Date().toISOString(),
-          safe_error_message: isPartial ? partialWarningMessage : null,
-          metadata: { recordsCreated, contentItemsImported, isPartial, partialWarningMessage }
-        })
-        .eq('id', jobId)
-
-      await supabase.from('sync_logs').insert({
-        sync_job_id: jobId,
-        company_id: companyId,
-        platform: provider,
-        provider,
-        status: isPartial ? 'warning' : 'info',
-        level: isPartial ? 'warning' : 'info',
-        step: 'completion',
-        log_message: isPartial 
-          ? `Sync completed partially: ${partialWarningMessage}`
-          : `Sync completed successfully. ${recordsCreated} metric points saved, ${contentItemsImported} content items imported.`,
-        safe_message: isPartial
-          ? `Sync completed partially: ${partialWarningMessage}`
-          : `Sync completed successfully. ${recordsCreated} metric points saved, ${contentItemsImported} content items imported.`
+    await supabase
+      .from('sync_jobs')
+      .update({
+        status: finalJobStatus,
+        completed_at: new Date().toISOString(),
+        safe_error_message: finalJobStatus !== 'completed' ? partialWarningMessage : null,
+        metadata: { recordsCreated, contentItemsImported, isPartial, partialWarningMessage }
       })
-    }
+      .eq('id', jobId)
+
+    await supabase.from('sync_logs').insert({
+      sync_job_id: jobId,
+      company_id: companyId,
+      platform: provider,
+      provider,
+      status: finalJobStatus === 'failed' ? 'error' : (isPartial ? 'warning' : 'info'),
+      level: finalJobStatus === 'failed' ? 'error' : (isPartial ? 'warning' : 'info'),
+      step: 'completion',
+      log_message: finalJobStatus === 'failed'
+        ? `Sync failed: ${partialWarningMessage}`
+        : (isPartial ? `Sync completed partially: ${partialWarningMessage}` : `Sync completed successfully. ${recordsCreated} metric points saved, ${contentItemsImported} content items imported.`),
+      safe_message: finalJobStatus === 'failed'
+        ? `Sync failed: ${partialWarningMessage}`
+        : (isPartial ? `Sync completed partially: ${partialWarningMessage}` : `Sync completed successfully. ${recordsCreated} metric points saved, ${contentItemsImported} content items imported.`)
+    })
 
     await logAuditAction({
       companyId,
-      action: isPartial ? 'sync_partially_completed' : 'sync_completed',
+      action: finalJobStatus === 'failed' ? 'sync_failed' : (isPartial ? 'sync_partially_completed' : 'sync_completed'),
       entityType: 'platform_connection',
       entityId: connectionId,
       summary: `Historical analytics sync ${finalJobStatus} for ${provider}: ${recordsCreated} metrics, ${contentItemsImported} items.`
     })
 
     return {
-      success: true,
+      success: finalJobStatus !== 'failed',
       jobId,
       status: finalJobStatus,
       recordsCreated,
       contentItemsImported,
-      safeErrorMessage: isPartial ? partialWarningMessage : undefined
+      safeErrorMessage: finalJobStatus !== 'completed' ? partialWarningMessage : undefined
     }
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : 'Historical analytics sync failed.'

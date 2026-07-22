@@ -9,6 +9,7 @@ import { SocialPlatform } from '@/lib/connectors/types'
 export interface SaveSnapshotsInput {
   companyId: string
   socialAccountId: string
+  providerAccountId?: string
   platformConnectionId?: string
   provider: SocialPlatform
   results: NormalizedAccountMetricResult[]
@@ -17,6 +18,7 @@ export interface SaveSnapshotsInput {
 export interface SaveContentInput {
   companyId: string
   socialAccountId: string
+  providerAccountId?: string
   platformConnectionId?: string
   provider: SocialPlatform
   items: NormalizedContentItem[]
@@ -34,20 +36,23 @@ export async function saveAccountSnapshotsIdempotent(
   supabase: SupabaseClient,
   input: SaveSnapshotsInput
 ): Promise<{ count: number; error: string | null }> {
-  const { companyId, socialAccountId, platformConnectionId, provider, results } = input
+  const { companyId, socialAccountId, providerAccountId, platformConnectionId, provider, results } = input
   if (results.length === 0) return { count: 0, error: null }
 
   const rowsToUpsert = []
 
   for (const result of results) {
     for (const metric of result.metrics) {
+      const aggLevel = result.aggregationLevel || 'daily'
       rowsToUpsert.push({
         company_id: companyId,
         social_account_id: socialAccountId,
+        provider_account_id: providerAccountId || socialAccountId,
         platform_connection_id: platformConnectionId || null,
         provider,
         snapshot_date: result.snapshotDate,
-        aggregation_level: result.aggregationLevel || 'daily',
+        aggregation_level: aggLevel,
+        aggregation_period: aggLevel,
         metric_name: metric.name,
         metric_value: metric.value,
         metric_unit: metric.unit || null,
@@ -62,18 +67,20 @@ export async function saveAccountSnapshotsIdempotent(
 
   if (rowsToUpsert.length === 0) return { count: 0, error: null }
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('analytics_snapshots')
     .upsert(rowsToUpsert, {
       onConflict: 'company_id,social_account_id,provider,snapshot_date,aggregation_level,metric_name'
     })
+    .select('id')
 
   if (error) {
     console.error('Failed to upsert analytics_snapshots:', error)
     return { count: 0, error: error.message }
   }
 
-  return { count: rowsToUpsert.length, error: null }
+  const savedCount = data ? data.length : rowsToUpsert.length
+  return { count: savedCount, error: null }
 }
 
 /**
@@ -84,13 +91,14 @@ export async function saveContentItemsIdempotent(
   supabase: SupabaseClient,
   input: SaveContentInput
 ): Promise<{ itemMap: Map<string, string>; error: string | null }> {
-  const { companyId, socialAccountId, platformConnectionId, provider, items } = input
+  const { companyId, socialAccountId, providerAccountId, platformConnectionId, provider, items } = input
   const itemMap = new Map<string, string>()
   if (items.length === 0) return { itemMap, error: null }
 
   const rowsToUpsert = items.map(item => ({
     company_id: companyId,
     social_account_id: socialAccountId,
+    provider_account_id: providerAccountId || socialAccountId,
     platform_connection_id: platformConnectionId || null,
     provider,
     provider_content_id: item.providerContentId,
@@ -150,6 +158,7 @@ export async function saveContentMetricsIdempotent(
         company_id: companyId,
         content_item_id: dbContentItemId,
         metric_date: cm.metricDate,
+        snapshot_date: cm.metricDate,
         metric_name: m.name,
         metric_value: m.value,
         provider_metric_name: m.providerMetricName || null,
@@ -161,16 +170,18 @@ export async function saveContentMetricsIdempotent(
 
   if (rowsToUpsert.length === 0) return { count: 0, error: null }
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('content_metrics')
     .upsert(rowsToUpsert, {
       onConflict: 'content_item_id,metric_date,metric_name'
     })
+    .select('id')
 
   if (error) {
     console.error('Failed to upsert content_metrics:', error)
     return { count: 0, error: error.message }
   }
 
-  return { count: rowsToUpsert.length, error: null }
+  const savedCount = data ? data.length : rowsToUpsert.length
+  return { count: savedCount, error: null }
 }
