@@ -173,4 +173,30 @@ export class FacebookConnector implements SocialPlatformConnector {
       return { status: 'unknown', message: e instanceof Error ? e.message : 'Unknown transport error.' }
     }
   }
+
+  // Analytics Extensions
+  public getAnalyticsCapabilities() {
+    return getFacebookAnalyticsCapabilities()
+  }
+
+  public async fetchAccountMetrics(connectionId: string, accessToken: string, providerAccountId: string, range: DateRange) {
+    return fetchFacebookAccountMetrics(accessToken, providerAccountId, range)
+  }
+
+  public async fetchContent(connectionId: string, accessToken: string, providerAccountId: string, range: DateRange) {
+    return fetchFacebookContent(accessToken, providerAccountId, range)
+  }
+
+  public async fetchContentMetrics(connectionId: string, accessToken: string, providerAccountId: string, providerContentIds: string[], range: DateRange) {
+    return fetchFacebookContentMetrics(accessToken, providerAccountId, providerContentIds, range)
+  }
 }
+
+import {
+  getFacebookAnalyticsCapabilities,
+  fetchFacebookAccountMetrics,
+  fetchFacebookContent,
+  fetchFacebookContentMetrics
+} from './analytics'
+import { DateRange } from '@/lib/analytics/types'
+

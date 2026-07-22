@@ -204,4 +204,30 @@ export class YoutubeConnector implements SocialPlatformConnector {
       return { status: 'unknown', message: e instanceof Error ? e.message : 'Unknown transport error.' }
     }
   }
+
+  // Analytics Extensions
+  public getAnalyticsCapabilities() {
+    return getYoutubeAnalyticsCapabilities()
+  }
+
+  public async fetchAccountMetrics(connectionId: string, accessToken: string, providerAccountId: string, range: DateRange) {
+    return fetchYoutubeAccountMetrics(accessToken, providerAccountId, range)
+  }
+
+  public async fetchContent(connectionId: string, accessToken: string, providerAccountId: string, range: DateRange) {
+    return fetchYoutubeContent(accessToken, providerAccountId, range)
+  }
+
+  public async fetchContentMetrics(connectionId: string, accessToken: string, providerAccountId: string, providerContentIds: string[], range: DateRange) {
+    return fetchYoutubeContentMetrics(accessToken, providerAccountId, providerContentIds, range)
+  }
 }
+
+import {
+  getYoutubeAnalyticsCapabilities,
+  fetchYoutubeAccountMetrics,
+  fetchYoutubeContent,
+  fetchYoutubeContentMetrics
+} from './analytics'
+import { DateRange } from '@/lib/analytics/types'
+

@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
+import { triggerManualSyncAction } from '@/features/sync/actions'
 
 interface ProviderConfig {
   isConfigured: boolean
@@ -96,6 +97,7 @@ export default function ConnectionsPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionSuccess, setActionSuccess] = useState<string | null>(null)
   const [processingId, setProcessingId] = useState<string | null>(null)
+  const [syncingId, setSyncingId] = useState<string | null>(null)
   const [modalProvider, setModalProvider] = useState<keyof typeof PROVIDER_INFO | null>(null)
 
   const isViewer = userRole === 'viewer'
@@ -288,14 +290,43 @@ export default function ConnectionsPage() {
     }
   }
 
+  const handleSyncNow = async (connId: string, providerName: string) => {
+    setSyncingId(connId)
+    setActionError(null)
+    setActionSuccess(null)
+
+    try {
+      const res = await triggerManualSyncAction(connId, 30)
+      if (res.error) {
+        setActionError(`Sync failed for ${providerName}: ${res.error}`)
+      } else {
+        setActionSuccess(`Successfully synced ${providerName}! Ingested ${res.recordsCreated} metrics & ${res.contentItemsImported} content items.`)
+        loadData()
+      }
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : 'Sync execution failed.')
+    } finally {
+      setSyncingId(null)
+    }
+  }
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-extrabold tracking-tight">Platform Connections</h1>
-        <p className="text-xs text-muted-foreground mt-1">
-          Authorize integrations, configure scopes, and link selected channels for {activeCompany.name}.
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-extrabold tracking-tight">Platform Connections</h1>
+          <p className="text-xs text-muted-foreground mt-1">
+            Authorize integrations, configure scopes, link selected channels, and trigger historical sync for {activeCompany.name}.
+          </p>
+        </div>
+        <Link
+          href="/connections/sync-history"
+          className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-secondary hover:bg-secondary/80 text-secondary-foreground border border-border/60 transition-colors"
+        >
+          <Activity className="w-4 h-4 text-primary" /> View Sync History
+        </Link>
       </div>
+
 
       {actionError && (
         <div className="p-4 bg-destructive/10 border border-destructive/20 text-destructive text-xs rounded-xl flex items-start gap-3">
@@ -430,6 +461,22 @@ export default function ConnectionsPage() {
                           )}
                         </button>
                         
+                        <button
+                          disabled={isViewer || syncingId !== null || processingId !== null}
+                          onClick={() => handleSyncNow(conn.id, info.name)}
+                          className="inline-flex items-center gap-1 bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold px-3 py-1.5 rounded-lg disabled:opacity-50 cursor-pointer transition-colors"
+                        >
+                          {syncingId === conn.id ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" /> Syncing...
+                            </>
+                          ) : (
+                            <>
+                              <RefreshCw className="w-3.5 h-3.5" /> Sync Now
+                            </>
+                          )}
+                        </button>
+
                         {conn.connection_status === 'awaiting_account_selection' && (
                           <Link
                             href={`/connections/${key}/select-account?connectionId=${conn.id}`}

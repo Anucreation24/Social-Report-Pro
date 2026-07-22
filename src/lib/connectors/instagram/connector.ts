@@ -179,4 +179,30 @@ export class InstagramConnector implements SocialPlatformConnector {
       return { status: 'unknown', message: e instanceof Error ? e.message : 'Unknown transport error.' }
     }
   }
+
+  // Analytics Extensions
+  public getAnalyticsCapabilities() {
+    return getInstagramAnalyticsCapabilities()
+  }
+
+  public async fetchAccountMetrics(connectionId: string, accessToken: string, providerAccountId: string, range: DateRange) {
+    return fetchInstagramAccountMetrics(accessToken, providerAccountId, range)
+  }
+
+  public async fetchContent(connectionId: string, accessToken: string, providerAccountId: string, range: DateRange) {
+    return fetchInstagramContent(accessToken, providerAccountId, range)
+  }
+
+  public async fetchContentMetrics(connectionId: string, accessToken: string, providerAccountId: string, providerContentIds: string[], range: DateRange) {
+    return fetchInstagramContentMetrics(accessToken, providerAccountId, providerContentIds, range)
+  }
 }
+
+import {
+  getInstagramAnalyticsCapabilities,
+  fetchInstagramAccountMetrics,
+  fetchInstagramContent,
+  fetchInstagramContentMetrics
+} from './analytics'
+import { DateRange } from '@/lib/analytics/types'
+

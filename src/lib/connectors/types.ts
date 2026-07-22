@@ -54,6 +54,14 @@ export interface ConnectionHealthResult {
   message?: string
 }
 
+import {
+  DateRange,
+  NormalizedAccountMetricResult,
+  NormalizedContentItem,
+  NormalizedContentMetric,
+  ProviderAnalyticsCapabilities
+} from '@/lib/analytics/types'
+
 export interface SocialPlatformConnector {
   provider: SocialPlatform
   getCapabilities(): ProviderCapabilities
@@ -63,4 +71,27 @@ export interface SocialPlatformConnector {
   revokeAccess(accessToken: string): Promise<void>
   getAvailableAccounts(accessToken: string): Promise<SelectableSocialAccount[]>
   validateConnection(accessToken: string): Promise<ConnectionHealthResult>
+  
+  // Analytics Extensions
+  getAnalyticsCapabilities(): ProviderAnalyticsCapabilities
+  fetchAccountMetrics(
+    connectionId: string,
+    accessToken: string,
+    providerAccountId: string,
+    range: DateRange
+  ): Promise<NormalizedAccountMetricResult[]>
+  fetchContent(
+    connectionId: string,
+    accessToken: string,
+    providerAccountId: string,
+    range: DateRange
+  ): Promise<NormalizedContentItem[]>
+  fetchContentMetrics(
+    connectionId: string,
+    accessToken: string,
+    providerAccountId: string,
+    providerContentIds: string[],
+    range: DateRange
+  ): Promise<NormalizedContentMetric[]>
 }
+

@@ -185,4 +185,30 @@ export class TiktokConnector implements SocialPlatformConnector {
       return { status: 'unknown', message: e instanceof Error ? e.message : 'Unknown transport error.' }
     }
   }
+
+  // Analytics Extensions
+  public getAnalyticsCapabilities() {
+    return getTiktokAnalyticsCapabilities()
+  }
+
+  public async fetchAccountMetrics(connectionId: string, accessToken: string, providerAccountId: string, range: DateRange) {
+    return fetchTiktokAccountMetrics(accessToken, providerAccountId, range)
+  }
+
+  public async fetchContent(connectionId: string, accessToken: string, providerAccountId: string, range: DateRange) {
+    return fetchTiktokContent(accessToken, providerAccountId, range)
+  }
+
+  public async fetchContentMetrics(connectionId: string, accessToken: string, providerAccountId: string, providerContentIds: string[], range: DateRange) {
+    return fetchTiktokContentMetrics(accessToken, providerAccountId, providerContentIds, range)
+  }
 }
+
+import {
+  getTiktokAnalyticsCapabilities,
+  fetchTiktokAccountMetrics,
+  fetchTiktokContent,
+  fetchTiktokContentMetrics
+} from './analytics'
+import { DateRange } from '@/lib/analytics/types'
+
