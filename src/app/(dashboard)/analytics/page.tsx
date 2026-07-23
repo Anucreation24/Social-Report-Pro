@@ -142,9 +142,19 @@ export default function AnalyticsPage() {
               <div key={card.metricName} className="bg-card/80 border border-border/80 rounded-2xl p-4 shadow-sm space-y-1">
                 <span className="text-xs font-bold text-muted-foreground">{card.label}</span>
                 <div className="text-xl font-black text-foreground">{card.currentTotal.toLocaleString()} {card.unit || ''}</div>
-                <div className="text-[11px] text-emerald-500 font-semibold">
-                  {card.growth.isUnavailable ? 'No baseline' : `${card.growth.isPositive ? '+' : ''}${card.growth.percentageChange}% vs prev period`}
-                </div>
+                {card.metricName === 'impressions' && card.currentTotal === 0 ? (
+                  <div className="text-[11px] text-amber-500 font-semibold">
+                    Impressions unavailable for this Facebook Page due to Meta permission limitations.
+                  </div>
+                ) : card.metricName === 'reach' && card.currentTotal === 0 ? (
+                  <div className="text-[11px] text-amber-500 font-semibold">
+                    Reach unavailable for this Facebook Page due to Meta permission limitations.
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-emerald-500 font-semibold">
+                    {card.growth.isUnavailable ? 'No baseline' : `${card.growth.isPositive ? '+' : ''}${card.growth.percentageChange}% vs prev period`}
+                  </div>
+                )}
               </div>
             ))}
           </div>

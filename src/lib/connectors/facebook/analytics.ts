@@ -191,26 +191,67 @@ export async function fetchFacebookContentMetrics(
 
   for (const postId of providerContentIds.slice(0, 20)) {
     const postMetricUrl = `https://graph.facebook.com/${apiVersion}/${postId}?fields=reactions.summary(true),comments.summary(true),shares&access_token=${tokenToUse}`
+    const postInsightsUrl = `https://graph.facebook.com/${apiVersion}/${postId}/insights?metric=post_impressions,post_impressions_unique,post_video_views&access_token=${tokenToUse}`
+
     try {
+      let likes = 0
+      let comments = 0
+      let shares = 0
+      let postImpressions = 0
+      let postReach = 0
+      let postViews = 0
+
       const res = await fetch(postMetricUrl)
       if (res.ok) {
         const data = await res.json()
-        const likes = data.reactions?.summary?.total_count || 0
-        const comments = data.comments?.summary?.total_count || 0
-        const shares = data.shares?.count || 0
-        const totalEngagements = likes + comments + shares
-
-        results.push({
-          providerContentId: postId,
-          metricDate: todayStr,
-          metrics: [
-            { name: 'likes', value: likes },
-            { name: 'comments', value: comments },
-            { name: 'shares', value: shares },
-            { name: 'engagements', value: totalEngagements }
-          ]
-        })
+        likes = data.reactions?.summary?.total_count || 0
+        comments = data.comments?.summary?.total_count || 0
+        shares = data.shares?.count || 0
       }
+
+      try {
+        const insightsRes = await fetch(postInsightsUrl)
+        if (insightsRes.ok) {
+          const insightsJson = await insightsRes.json()
+          const dataList = insightsJson.data || []
+          for (const item of dataList) {
+            const val = normalizeMetricValue(item.values?.[0]?.value)
+            if (item.name === 'post_impressions') {
+              postImpressions = val
+            } else if (item.name === 'post_impressions_unique') {
+              postReach = val
+            } else if (item.name === 'post_video_views') {
+              postViews = val
+            }
+          }
+        }
+      } catch (insightsErr) {
+        console.warn(`Facebook post insights fetch notice for ${postId}:`, insightsErr)
+      }
+
+      const totalEngagements = likes + comments + shares
+      const metricsList: Array<{ name: NormalizedContentMetric['metrics'][number]['name']; value: number; providerMetricName?: string }> = [
+        { name: 'likes', value: likes, providerMetricName: 'reactions' },
+        { name: 'comments', value: comments, providerMetricName: 'comments' },
+        { name: 'shares', value: shares, providerMetricName: 'shares' },
+        { name: 'engagements', value: totalEngagements, providerMetricName: 'page_post_engagements' }
+      ]
+
+      if (postImpressions > 0) {
+        metricsList.push({ name: 'impressions', value: postImpressions, providerMetricName: 'post_impressions' })
+      }
+      if (postReach > 0) {
+        metricsList.push({ name: 'reach', value: postReach, providerMetricName: 'post_impressions_unique' })
+      }
+      if (postViews > 0) {
+        metricsList.push({ name: 'views', value: postViews, providerMetricName: 'post_video_views' })
+      }
+
+      results.push({
+        providerContentId: postId,
+        metricDate: todayStr,
+        metrics: metricsList
+      })
     } catch (e) {
       console.warn(`Failed to fetch metrics for Facebook post ${postId}:`, e)
     }

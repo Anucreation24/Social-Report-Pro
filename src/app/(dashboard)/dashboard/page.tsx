@@ -198,25 +198,35 @@ export default function DashboardPage() {
                     {card.currentTotal.toLocaleString()} {card.unit || ''}
                   </div>
 
-                  <div className="flex items-center gap-1.5 mt-1">
-                    {growth.isUnavailable ? (
-                      <span className="text-[11px] text-muted-foreground font-semibold">
-                        No previous period baseline
-                      </span>
-                    ) : (
-                      <span
-                        className={`text-[11px] font-bold inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full ${
-                          isPositive
-                            ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
-                            : 'bg-rose-500/10 text-rose-500 border border-rose-500/20'
-                        }`}
-                      >
-                        {isPositive ? '+' : ''}
-                        {growth.percentageChange}%
-                      </span>
-                    )}
-                    <span className="text-[10px] text-muted-foreground">vs prev period</span>
-                  </div>
+                  {card.metricName === 'impressions' && card.currentTotal === 0 ? (
+                    <p className="text-[11px] text-amber-500 font-semibold mt-1">
+                      Impressions unavailable for this Facebook Page due to Meta permission limitations.
+                    </p>
+                  ) : card.metricName === 'reach' && card.currentTotal === 0 ? (
+                    <p className="text-[11px] text-amber-500 font-semibold mt-1">
+                      Reach unavailable for this Facebook Page due to Meta permission limitations.
+                    </p>
+                  ) : (
+                    <div className="flex items-center gap-1.5 mt-1">
+                      {growth.isUnavailable ? (
+                        <span className="text-[11px] text-muted-foreground font-semibold">
+                          No previous period baseline
+                        </span>
+                      ) : (
+                        <span
+                          className={`text-[11px] font-bold inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full ${
+                            isPositive
+                              ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                              : 'bg-rose-500/10 text-rose-500 border border-rose-500/20'
+                          }`}
+                        >
+                          {isPositive ? '+' : ''}
+                          {growth.percentageChange}%
+                        </span>
+                      )}
+                      <span className="text-[10px] text-muted-foreground">vs prev period</span>
+                    </div>
+                  )}
                 </div>
               </div>
             )
