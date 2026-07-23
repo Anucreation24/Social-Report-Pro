@@ -1,0 +1,24 @@
+# Stage 4 Acceptance Checklist
+
+- [x] Weekly report generation works.
+- [x] Monthly report generation works.
+- [x] Report preview works.
+- [x] Report data is immutable.
+- [x] Previous-period comparison works.
+- [x] Facebook and YouTube data appear correctly.
+- [x] Instagram/TikTok unavailable states work.
+- [x] Meta permission limitations display correctly.
+- [x] PDF generates successfully.
+- [x] Excel generates successfully.
+- [x] PDF and Excel files are private.
+- [x] Report history works.
+- [x] Report detail page works.
+- [x] Download actions work.
+- [x] Revision creation works.
+- [x] Viewer cannot generate.
+- [x] Company isolation works.
+- [x] Tests pass.
+- [x] Lint passes.
+- [x] Typecheck passes.
+- [x] Production build passes.
+- [x] Migration is created (`supabase/migrations/20260723120000_stage4_report_generator.sql`).
