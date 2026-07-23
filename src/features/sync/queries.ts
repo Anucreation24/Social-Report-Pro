@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/client'
 import { DateRange, MetricSummaryCard, NormalizedMetricName } from '@/lib/analytics/types'
 import { getPreviousEquivalentPeriod } from '@/lib/analytics/date-ranges'
 import { calculateGrowth } from '@/lib/analytics/growth'
-import { aggregateMetricSnapshots } from '@/lib/analytics/aggregation'
+import { aggregateCombinedMetrics, ContentMetricDbRow, DbSnapshotRow } from '@/lib/analytics/aggregation'
 
 export interface DashboardMetricsResult {
   summaryCards: MetricSummaryCard[]
@@ -39,7 +39,23 @@ export async function fetchDashboardAnalyticsData(
     .gte('snapshot_date', prevRange.startDate)
     .lte('snapshot_date', prevRange.endDate)
 
-  // 3. Fetch latest connection sync timestamp
+  // 3. Fetch current range content metrics
+  const { data: currentContentRows } = await supabase
+    .from('content_metrics')
+    .select('metric_date, metric_name, metric_value, content_items(provider)')
+    .eq('company_id', companyId)
+    .gte('metric_date', range.startDate)
+    .lte('metric_date', range.endDate)
+
+  // 4. Fetch previous range content metrics
+  const { data: prevContentRows } = await supabase
+    .from('content_metrics')
+    .select('metric_date, metric_name, metric_value, content_items(provider)')
+    .eq('company_id', companyId)
+    .gte('metric_date', prevRange.startDate)
+    .lte('metric_date', prevRange.endDate)
+
+  // 5. Fetch latest connection sync timestamp
   const { data: conn } = await supabase
     .from('platform_connections')
     .select('last_successful_sync_at')
@@ -50,8 +66,29 @@ export async function fetchDashboardAnalyticsData(
 
   const lastSyncAt = conn && conn.length > 0 ? conn[0].last_successful_sync_at : null
 
-  const cRows = currentRows || []
-  const pRows = prevRows || []
+  const cRows = (currentRows || []) as DbSnapshotRow[]
+  const pRows = (prevRows || []) as DbSnapshotRow[]
+
+  interface ContentMetricsJoinRow {
+    metric_date: string
+    metric_name: string
+    metric_value: number
+    content_items: { provider: string } | null
+  }
+
+  const cContent: ContentMetricDbRow[] = (currentContentRows as unknown as ContentMetricsJoinRow[] || []).map(r => ({
+    metric_date: r.metric_date,
+    metric_name: r.metric_name,
+    metric_value: r.metric_value,
+    provider: r.content_items?.provider
+  }))
+
+  const pContent: ContentMetricDbRow[] = (prevContentRows as unknown as ContentMetricsJoinRow[] || []).map(r => ({
+    metric_date: r.metric_date,
+    metric_name: r.metric_name,
+    metric_value: r.metric_value,
+    provider: r.content_items?.provider
+  }))
 
   const metricsToSummarize: Array<{ key: NormalizedMetricName; label: string; unit?: string; tooltip?: string }> = [
     { key: 'audience_total', label: 'Total Audience', tooltip: 'Latest total follower/subscriber count across platforms.' },
@@ -62,8 +99,8 @@ export async function fetchDashboardAnalyticsData(
   ]
 
   const summaryCards: MetricSummaryCard[] = metricsToSummarize.map(item => {
-    let curVal = aggregateMetricSnapshots(cRows, item.key)
-    let preVal = aggregateMetricSnapshots(pRows, item.key)
+    let curVal = aggregateCombinedMetrics(cRows, cContent, item.key)
+    let preVal = aggregateCombinedMetrics(pRows, pContent, item.key)
 
     if (item.key === 'watch_time_seconds') {
       curVal = parseFloat((curVal / 3600).toFixed(1))
@@ -85,12 +122,13 @@ export async function fetchDashboardAnalyticsData(
   // Platform breakdown
   const platforms = ['facebook', 'youtube', 'instagram', 'tiktok']
   const platformBreakdown = platforms.map(p => {
-    const pRowsCurr = cRows.filter(r => r.provider === p)
+    const pSnapCurr = cRows.filter(r => r.provider === p)
+    const pContentCurr = cContent.filter(r => r.provider === p)
     return {
       platform: p,
-      audience: aggregateMetricSnapshots(pRowsCurr, 'audience_total'),
-      views: aggregateMetricSnapshots(pRowsCurr, 'views'),
-      engagements: aggregateMetricSnapshots(pRowsCurr, 'engagements')
+      audience: aggregateCombinedMetrics(pSnapCurr, pContentCurr, 'audience_total'),
+      views: aggregateCombinedMetrics(pSnapCurr, pContentCurr, 'views'),
+      engagements: aggregateCombinedMetrics(pSnapCurr, pContentCurr, 'engagements')
     }
   })
 
@@ -108,7 +146,7 @@ export async function fetchAnalyticsTrendData(
 ) {
   const supabase = await createClient()
 
-  let query = supabase
+  let snapQuery = supabase
     .from('analytics_snapshots')
     .select('snapshot_date, metric_name, metric_value, provider')
     .eq('company_id', companyId)
@@ -116,25 +154,56 @@ export async function fetchAnalyticsTrendData(
     .lte('snapshot_date', range.endDate)
 
   if (platformFilter !== 'all') {
-    query = query.eq('provider', platformFilter)
+    snapQuery = snapQuery.eq('provider', platformFilter)
   }
 
-  const { data } = await query
+  const { data: snapData } = await snapQuery
 
-  const rows = data || []
+  const contentQuery = supabase
+    .from('content_metrics')
+    .select('metric_date, metric_name, metric_value, content_items(provider)')
+    .eq('company_id', companyId)
+    .gte('metric_date', range.startDate)
+    .lte('metric_date', range.endDate)
+
+  const { data: contentData } = await contentQuery
+
+  const snapRows = snapData || []
+  interface ContentJoinRow {
+    metric_date: string
+    metric_name: string
+    metric_value: number
+    content_items: { provider: string } | null
+  }
+  const contentRows = (contentData as unknown as ContentJoinRow[] || []).filter(r => 
+    platformFilter === 'all' || r.content_items?.provider === platformFilter
+  )
 
   // Group by date
   const dateMap = new Map<string, Record<string, number>>()
 
-  for (const r of rows) {
+  for (const r of snapRows) {
     const d = r.snapshot_date
     if (!dateMap.has(d)) {
       dateMap.set(d, { date: d } as unknown as Record<string, number>)
     }
     const node = dateMap.get(d)!
     const metricKey = `${r.provider}_${r.metric_name}`
-    node[metricKey] = (node[metricKey] || 0) + r.metric_value
-    node[r.metric_name] = (node[r.metric_name] || 0) + r.metric_value
+    node[metricKey] = Math.max(node[metricKey] || 0, r.metric_value)
+    node[r.metric_name] = Math.max(node[r.metric_name] || 0, r.metric_value)
+  }
+
+  for (const r of contentRows) {
+    const d = r.metric_date
+    if (!d) continue
+    const p = r.content_items?.provider || 'facebook'
+    if (!dateMap.has(d)) {
+      dateMap.set(d, { date: d } as unknown as Record<string, number>)
+    }
+    const node = dateMap.get(d)!
+    const metricKey = `${p}_${r.metric_name}`
+    node[metricKey] = Math.max(node[metricKey] || 0, r.metric_value)
+    node[r.metric_name] = Math.max(node[r.metric_name] || 0, r.metric_value)
   }
 
   const sortedDates = Array.from(dateMap.keys()).sort()

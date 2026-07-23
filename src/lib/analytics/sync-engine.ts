@@ -8,6 +8,7 @@ import {
   saveContentMetricsIdempotent
 } from './idempotency'
 import { SocialPlatform } from '@/lib/connectors/types'
+import { NormalizedAccountMetricResult, NormalizedMetricName } from '@/lib/analytics/types'
 import { logAuditAction } from '@/lib/audit'
 
 export interface SyncExecutionInput {
@@ -312,6 +313,64 @@ export async function executePlatformSync(
         }
 
         recordsCreated += saveContentMetricsRes.count
+
+        // Summarize daily content metrics into analytics_snapshots so views, engagements, reach, impressions exist in analytics_snapshots
+        const dailySummaryMap = new Map<string, Record<string, number>>()
+
+        for (const cm of contentMetrics) {
+          const dateKey = cm.metricDate || range.endDate
+          if (!dailySummaryMap.has(dateKey)) {
+            dailySummaryMap.set(dateKey, {})
+          }
+          const node = dailySummaryMap.get(dateKey)!
+          let itemLikes = 0, itemComments = 0, itemShares = 0, itemEngagements = 0
+
+          for (const m of cm.metrics) {
+            node[m.name] = (node[m.name] || 0) + m.value
+            if (m.name === 'likes') itemLikes += m.value
+            if (m.name === 'comments') itemComments += m.value
+            if (m.name === 'shares') itemShares += m.value
+            if (m.name === 'engagements') itemEngagements += m.value
+          }
+
+          if (!node['engagements'] || node['engagements'] === 0) {
+            const derivedEngagements = Math.max(itemEngagements, itemLikes + itemComments + itemShares)
+            node['engagements'] = (node['engagements'] || 0) + derivedEngagements
+          }
+        }
+
+        const aggregatedSnapshotResults: NormalizedAccountMetricResult[] = []
+        for (const [dateStr, metricTotals] of dailySummaryMap.entries()) {
+          const metricsList = Object.entries(metricTotals).map(([name, val]) => ({
+            name: name as NormalizedMetricName,
+            value: val
+          }))
+
+          if (metricsList.length > 0) {
+            aggregatedSnapshotResults.push({
+              snapshotDate: dateStr,
+              aggregationLevel: 'daily',
+              metrics: metricsList
+            })
+          }
+        }
+
+        if (aggregatedSnapshotResults.length > 0) {
+          const saveAggSnapRes = await saveAccountSnapshotsIdempotent(supabase, {
+            companyId,
+            socialAccountId,
+            providerAccountId,
+            platformConnectionId: connectionId,
+            provider,
+            results: aggregatedSnapshotResults
+          })
+
+          if (saveAggSnapRes.error) {
+            console.warn('Notice saving aggregated content metrics to analytics_snapshots:', saveAggSnapRes.error)
+          } else {
+            recordsCreated += saveAggSnapRes.count
+          }
+        }
       }
     } catch (contentErr: unknown) {
       const msg = contentErr instanceof Error ? contentErr.message : 'Content items fetch failed'

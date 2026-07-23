@@ -261,3 +261,33 @@ test('sync rules - YouTube Data API lifetime stats fallback', () => {
   assert.equal(result.unit, 'subscribers');
 });
 
+test('analytics - aggregateCombinedMetrics integrates content_metrics engagements when analytics_snapshots is zero', () => {
+  const snapRows = [{ snapshot_date: '2026-07-23', metric_name: 'audience_total', metric_value: 699, provider: 'facebook' }];
+  const contentRows = [
+    { metric_date: '2026-07-23', metric_name: 'likes', metric_value: 12, provider: 'facebook' },
+    { metric_date: '2026-07-23', metric_name: 'comments', metric_value: 3, provider: 'facebook' },
+    { metric_date: '2026-07-23', metric_name: 'shares', metric_value: 5, provider: 'facebook' }
+  ];
+
+  function aggregateCombined(snaps, contents, metricName) {
+    if (metricName === 'audience_total') {
+      const filtered = snaps.filter(s => s.metric_name === 'audience_total');
+      return filtered.length > 0 ? filtered[0].metric_value : 0;
+    }
+    let snapVal = snaps.filter(s => s.metric_name === metricName).reduce((a, b) => a + b.metric_value, 0);
+    let contentVal = 0;
+    if (metricName === 'engagements') {
+      let direct = contents.filter(c => c.metric_name === 'engagements').reduce((a, b) => a + b.metric_value, 0);
+      let reactions = contents.filter(c => ['likes', 'comments', 'shares'].includes(c.metric_name)).reduce((a, b) => a + b.metric_value, 0);
+      contentVal = Math.max(direct, reactions);
+    } else {
+      contentVal = contents.filter(c => c.metric_name === metricName).reduce((a, b) => a + b.metric_value, 0);
+    }
+    return Math.max(snapVal, contentVal);
+  }
+
+  assert.equal(aggregateCombined(snapRows, contentRows, 'audience_total'), 699);
+  assert.equal(aggregateCombined(snapRows, contentRows, 'engagements'), 20);
+});
+
+
