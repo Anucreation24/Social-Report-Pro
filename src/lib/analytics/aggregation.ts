@@ -1,15 +1,18 @@
 import { NormalizedMetricName } from './types'
+import { deduplicateMetricsBySourcePriority, ProvenanceRecord } from './source-priority'
 
-export interface DbSnapshotRow {
+export interface DbSnapshotRow extends ProvenanceRecord {
   snapshot_date: string
   metric_name: NormalizedMetricName | string
   metric_value: number
   aggregation_level?: string
   provider: string
   social_account_id?: string
+  data_source?: any
+  source_priority?: number
 }
 
-export interface ContentMetricDbRow {
+export interface ContentMetricDbRow extends ProvenanceRecord {
   metric_date: string
   metric_name: string
   metric_value: number
@@ -21,13 +24,13 @@ const pointInTimeMetrics: Set<string> = new Set(['audience_total'])
 
 /**
  * Aggregates a list of database snapshot rows for a specific metric over a date range.
- * For point-in-time metrics (like audience_total), takes the latest snapshot value.
- * For cumulative metrics (like impressions, reach, views), sums up daily snapshot values.
+ * Applies deduplicateMetricsBySourcePriority so overlapping API, CSV import, and manual entries are not double-counted!
  */
 export function aggregateMetricSnapshots(
-  rows: DbSnapshotRow[],
+  rawRows: DbSnapshotRow[],
   metricName: NormalizedMetricName | string
 ): number {
+  const rows = deduplicateMetricsBySourcePriority(rawRows)
   const filtered = rows.filter(r => r.metric_name === metricName)
   if (filtered.length === 0) return 0
 

@@ -18,7 +18,13 @@ import {
   Settings, 
   Activity,
   Calendar,
-  ShieldCheck
+  ShieldCheck,
+  FileSpreadsheet,
+  Edit3,
+  ExternalLink,
+  PlusCircle,
+  HelpCircle,
+  FileText
 } from 'lucide-react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
@@ -59,27 +65,31 @@ interface DBSocialAccount {
 const PROVIDER_INFO = {
   facebook: {
     name: 'Facebook Page',
-    description: 'Read-only page insights and post engagement statistics.',
+    description: 'Page insights and post engagement statistics via API or file import.',
     icon: Facebook,
-    color: 'text-blue-500 bg-blue-500/10 border-blue-500/20'
+    color: 'text-blue-500 bg-blue-500/10 border-blue-500/20',
+    insightsUrl: 'https://business.facebook.com/latest/insights'
   },
   instagram: {
     name: 'Instagram Professional',
-    description: 'Access professional business/creator account metrics.',
+    description: 'Professional business/creator metrics via API or manual data entry.',
     icon: Instagram,
-    color: 'text-pink-500 bg-pink-500/10 border-pink-500/20'
+    color: 'text-pink-500 bg-pink-500/10 border-pink-500/20',
+    insightsUrl: 'https://www.instagram.com/accounts/insights/'
   },
   youtube: {
     name: 'YouTube Channel',
-    description: 'Track channel performance, watch time, and subscriber counts.',
+    description: 'Track channel performance, watch time, and subscriber metrics.',
     icon: Youtube,
-    color: 'text-red-500 bg-red-500/10 border-red-500/20'
+    color: 'text-red-500 bg-red-500/10 border-red-500/20',
+    insightsUrl: 'https://studio.youtube.com/'
   },
   tiktok: {
     name: 'TikTok Profile',
-    description: 'Video performance and audience demographics indicators.',
+    description: 'Video views, audience growth, and engagement statistics.',
     icon: Video,
-    color: 'text-cyan-400 bg-cyan-400/10 border-cyan-400/20'
+    color: 'text-cyan-400 bg-cyan-400/10 border-cyan-400/20',
+    insightsUrl: 'https://www.tiktok.com/analytics'
   }
 } as const
 
@@ -92,6 +102,7 @@ export default function ConnectionsPage() {
   const [configs, setConfigs] = useState<ConfigStatus | null>(null)
   const [connections, setConnections] = useState<DBConnection[]>([])
   const [socialAccounts, setSocialAccounts] = useState<DBSocialAccount[]>([])
+  const [importedBatches, setImportedBatches] = useState<Array<{ platform: string; source_type: string }>>([])
   const [userRole, setUserRole] = useState<'owner' | 'admin' | 'marketing_manager' | 'viewer' | null>(null)
   
   const [actionError, setActionError] = useState<string | null>(null)
@@ -99,31 +110,9 @@ export default function ConnectionsPage() {
   const [processingId, setProcessingId] = useState<string | null>(null)
   const [syncingId, setSyncingId] = useState<string | null>(null)
   const [modalProvider, setModalProvider] = useState<keyof typeof PROVIDER_INFO | null>(null)
+  const [manageModalProvider, setManageModalProvider] = useState<keyof typeof PROVIDER_INFO | null>(null)
 
   const isViewer = userRole === 'viewer'
-
-  const determineProviderStatus = useCallback((
-    key: keyof typeof PROVIDER_INFO,
-    isConfigured: boolean,
-    conn?: DBConnection
-  ): 'not_configured' | 'ready_to_connect' | 'connected' | 'expired' | 'error' | 'awaiting_account_selection' => {
-    if (!conn) {
-      return isConfigured ? 'ready_to_connect' : 'not_configured'
-    }
-    if (conn.connection_status === 'awaiting_account_selection') {
-      return 'awaiting_account_selection'
-    }
-    if (conn.connection_status === 'connected') {
-      return 'connected'
-    }
-    if (conn.connection_status === 'expired') {
-      return 'expired'
-    }
-    if (conn.connection_status === 'error' || conn.last_error_message_safe) {
-      return 'error'
-    }
-    return 'connected'
-  }, [])
 
   const loadData = useCallback(async () => {
     if (!activeCompany) return
@@ -172,6 +161,17 @@ export default function ConnectionsPage() {
       if (accData) {
         setSocialAccounts(accData)
       }
+
+      // 5. Fetch imported batches to determine data sources
+      const { data: batchData } = await supabase
+        .from('data_import_batches')
+        .select('platform, source_type')
+        .eq('company_id', activeCompany.id)
+        .eq('status', 'completed')
+
+      if (batchData) {
+        setImportedBatches(batchData)
+      }
     } catch (err: unknown) {
       console.error('Failed to load connections:', err)
       setActionError('Failed to load company connection settings.')
@@ -198,6 +198,54 @@ export default function ConnectionsPage() {
       setActionError(decodeURIComponent(errorMsg))
     }
   }, [searchParams])
+
+  const determineDataMode = (key: keyof typeof PROVIDER_INFO) => {
+    const conn = connections.find((c) => c.provider === key && c.connection_status === 'connected')
+    const hasImport = importedBatches.some(b => b.platform === key && (b.source_type === 'csv_import' || b.source_type === 'excel_import'))
+    const hasManual = importedBatches.some(b => b.platform === key && b.source_type === 'manual_entry')
+
+    if (conn && (hasImport || hasManual)) return 'mixed'
+    if (conn) return 'api'
+    if (hasImport) return 'import'
+    if (hasManual) return 'manual'
+    return 'none'
+  }
+
+  const getStatusBadge = (dataMode: string) => {
+    switch (dataMode) {
+      case 'api':
+        return (
+          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+            <CheckCircle2 className="w-3 h-3" /> Live API Connected
+          </span>
+        )
+      case 'import':
+        return (
+          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-purple-500/10 text-purple-400 border border-purple-500/20 px-2 py-0.5 rounded-full">
+            <FileSpreadsheet className="w-3 h-3" /> File Import
+          </span>
+        )
+      case 'manual':
+        return (
+          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded-full">
+            <Edit3 className="w-3 h-3" /> Manual Entry
+          </span>
+        )
+      case 'mixed':
+        return (
+          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-full">
+            <RefreshCw className="w-3 h-3" /> Mixed Sources
+          </span>
+        )
+      case 'none':
+      default:
+        return (
+          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-muted text-muted-foreground border border-border/40 px-2 py-0.5 rounded-full">
+            Not Configured
+          </span>
+        )
+    }
+  }
 
   const handleDisconnect = async (connId: string, provider: string) => {
     if (!confirm(`Are you sure you want to disconnect ${provider}? Historical analytics reports will not be deleted, but no new data can be synchronized.`)) return
@@ -244,52 +292,6 @@ export default function ConnectionsPage() {
     }
   }
 
-  if (!activeCompany) {
-    return <div className="text-center py-12 text-muted-foreground text-sm">Select a company first.</div>
-  }
-
-  const getStatusBadge = (status: 'not_configured' | 'ready_to_connect' | 'connected' | 'expired' | 'error' | 'awaiting_account_selection') => {
-    switch (status) {
-      case 'connected':
-        return (
-          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-            <CheckCircle2 className="w-3 h-3" /> Connected
-          </span>
-        )
-      case 'ready_to_connect':
-        return (
-          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded-full">
-            <CheckCircle2 className="w-3 h-3" /> Ready to Connect
-          </span>
-        )
-      case 'not_configured':
-        return (
-          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-500 border border-amber-500/20 px-2 py-0.5 rounded-full">
-            <AlertCircle className="w-3 h-3" /> Not Configured
-          </span>
-        )
-      case 'awaiting_account_selection':
-        return (
-          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-500 border border-amber-500/20 px-2 py-0.5 rounded-full">
-            <Settings className="w-3 h-3 animate-spin" /> Link Pending
-          </span>
-        )
-      case 'expired':
-        return (
-          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-rose-500/10 text-rose-500 border border-rose-500/20 px-2 py-0.5 rounded-full">
-            <XCircle className="w-3 h-3" /> Expired
-          </span>
-        )
-      case 'error':
-      default:
-        return (
-          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-rose-500/10 text-rose-500 border border-rose-500/20 px-2 py-0.5 rounded-full">
-            <AlertCircle className="w-3 h-3" /> Error
-          </span>
-        )
-    }
-  }
-
   const handleSyncNow = async (connId: string, providerName: string) => {
     setSyncingId(connId)
     setActionError(null)
@@ -313,23 +315,34 @@ export default function ConnectionsPage() {
     }
   }
 
+  if (!activeCompany) {
+    return <div className="text-center py-12 text-muted-foreground text-sm">Select a company first.</div>
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight">Platform Connections</h1>
+          <h1 className="text-3xl font-extrabold tracking-tight">Platform Data & Connections</h1>
           <p className="text-xs text-muted-foreground mt-1">
-            Authorize integrations, configure scopes, link selected channels, and trigger historical sync for {activeCompany.name}.
+            Manage data sources for {activeCompany.name} using Official APIs, CSV/Excel imports, or Manual KPI entry.
           </p>
         </div>
-        <Link
-          href="/connections/sync-history"
-          className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-secondary hover:bg-secondary/80 text-secondary-foreground border border-border/60 transition-colors"
-        >
-          <Activity className="w-4 h-4 text-primary" /> View Sync History
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/imports"
+            className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-secondary hover:bg-secondary/80 text-secondary-foreground border border-border/60 transition-colors"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-purple-400" /> Import History
+          </Link>
+          <Link
+            href="/connections/sync-history"
+            className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-secondary hover:bg-secondary/80 text-secondary-foreground border border-border/60 transition-colors"
+          >
+            <Activity className="w-4 h-4 text-primary" /> View Sync History
+          </Link>
+        </div>
       </div>
-
 
       {actionError && (
         <div className="p-4 bg-destructive/10 border border-destructive/20 text-destructive text-xs rounded-xl flex items-start gap-3">
@@ -364,7 +377,7 @@ export default function ConnectionsPage() {
             
             const conn = connections.find((c) => c.provider === key && c.connection_status !== 'disconnected')
             const socialAcc = conn ? socialAccounts.find((sa) => sa.platform_connection_id === conn.id) : null
-            const status = determineProviderStatus(key, isConfigured, conn)
+            const dataMode = determineDataMode(key)
 
             return (
               <div 
@@ -383,10 +396,10 @@ export default function ConnectionsPage() {
                       </div>
                     </div>
                     <div>
-                      {getStatusBadge(status)}
+                      {getStatusBadge(dataMode)}
                     </div>
                   </div>
- 
+
                   {/* Connected profile details panel */}
                   {conn && (
                     <div className="bg-muted/40 border border-border/40 rounded-xl p-3.5 space-y-2.5">
@@ -410,7 +423,7 @@ export default function ConnectionsPage() {
                           )}
                         </div>
                       </div>
- 
+
                       <div className="grid grid-cols-2 gap-2 text-[10px] text-muted-foreground pt-1.5 border-t border-border/40">
                         <div className="flex items-center gap-1">
                           <ShieldCheck className="w-3.5 h-3.5" />
@@ -422,103 +435,44 @@ export default function ConnectionsPage() {
                             {conn.token_expires_at ? `Expires: ${new Date(conn.token_expires_at).toLocaleDateString()}` : 'No Expiry'}
                           </span>
                         </div>
-                        {conn.last_validated_at && (
-                          <div className="col-span-2 flex items-center gap-1">
-                            <Activity className="w-3.5 h-3.5" />
-                            <span>Checked: {new Date(conn.last_validated_at).toLocaleString()}</span>
-                          </div>
-                        )}
                       </div>
                     </div>
                   )}
- 
-                  {!conn && !isConfigured && (
-                    <button
-                      onClick={() => setModalProvider(key)}
-                      className="w-full text-left text-[10px] text-amber-500 bg-amber-500/10 hover:bg-amber-500/15 border border-amber-500/20 rounded-lg p-2.5 flex items-center gap-1.5 cursor-pointer transition-colors"
-                    >
-                      <AlertCircle className="w-4 h-4 shrink-0" />
-                      <span>Configuration required. Click to view missing keys.</span>
-                    </button>
-                  )}
                 </div>
- 
+
                 <div className="flex items-center justify-between pt-3 border-t border-border/40">
-                  <span className="text-[10px] text-muted-foreground">
-                    {!isConfigured ? 'Disabled' : conn ? 'Actions Available' : 'Ready'}
-                  </span>
- 
+                  <button
+                    onClick={() => setManageModalProvider(key)}
+                    className="inline-flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-lg bg-secondary hover:bg-secondary/80 text-secondary-foreground border border-border/60 cursor-pointer transition-colors"
+                  >
+                    <PlusCircle className="w-3.5 h-3.5 text-primary" /> Add / Manage Data
+                  </button>
+
                   <div className="flex items-center gap-1.5">
-                    {conn ? (
+                    {conn && (
                       <>
-                        <button
-                          disabled={isViewer || processingId !== null}
-                          onClick={() => handleValidate(conn.id)}
-                          title="Validate health"
-                          className="p-1.5 border border-border/60 hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-50 rounded-lg cursor-pointer transition-colors"
-                        >
-                          {processingId === conn.id ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <RefreshCw className="w-4 h-4" />
-                          )}
-                        </button>
-                        
                         <button
                           disabled={isViewer || syncingId !== null || processingId !== null}
                           onClick={() => handleSyncNow(conn.id, info.name)}
                           className="inline-flex items-center gap-1 bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold px-3 py-1.5 rounded-lg disabled:opacity-50 cursor-pointer transition-colors"
                         >
                           {syncingId === conn.id ? (
-                            <>
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" /> Syncing...
-                            </>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           ) : (
-                            <>
-                              <RefreshCw className="w-3.5 h-3.5" /> Sync Now
-                            </>
+                            <RefreshCw className="w-3.5 h-3.5" />
                           )}
+                          Sync API
                         </button>
 
-                        {conn.connection_status === 'awaiting_account_selection' && (
-                          <Link
-                            href={`/connections/${key}/select-account?connectionId=${conn.id}`}
-                            className="inline-flex items-center gap-1 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg cursor-pointer transition-colors"
-                          >
-                            <Settings className="w-3.5 h-3.5" /> Link Profile
-                          </Link>
-                        )}
- 
                         <button
                           disabled={isViewer || processingId !== null}
                           onClick={() => handleDisconnect(conn.id, info.name)}
-                          className="inline-flex items-center gap-1 bg-destructive/10 hover:bg-destructive text-destructive hover:text-destructive-foreground disabled:opacity-50 text-xs font-bold px-3 py-1.5 rounded-lg cursor-pointer transition-colors"
+                          className="p-1.5 text-destructive hover:bg-destructive/10 rounded-lg transition-colors cursor-pointer"
+                          title="Disconnect API"
                         >
-                          <Trash2 className="w-3.5 h-3.5" /> Disconnect
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       </>
-                    ) : !isConfigured ? (
-                      <button
-                        onClick={() => setModalProvider(key)}
-                        className="inline-flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-lg bg-secondary hover:bg-secondary/80 text-secondary-foreground border border-border/60 cursor-pointer transition-colors"
-                      >
-                        Configure Provider
-                      </button>
-                    ) : (
-                      <Link
-                        href={isViewer ? '#' : `/api/oauth/${key}/start?companyId=${activeCompany.id}`}
-                        aria-disabled={isViewer}
-                        onClick={(e) => {
-                          if (isViewer) e.preventDefault()
-                        }}
-                        className={`inline-flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${
-                          isViewer
-                            ? 'bg-muted text-muted-foreground cursor-not-allowed border border-border/40'
-                            : 'bg-primary hover:bg-primary/90 text-primary-foreground cursor-pointer'
-                        }`}
-                      >
-                        Connect
-                      </Link>
                     )}
                   </div>
                 </div>
@@ -528,13 +482,124 @@ export default function ConnectionsPage() {
         </div>
       )}
 
+      {/* Manage Data Method Modal */}
+      {manageModalProvider && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-card border border-border/80 rounded-2xl max-w-lg w-full p-6 shadow-2xl relative space-y-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-border/50 pb-3">
+              <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-lg border ${PROVIDER_INFO[manageModalProvider].color}`}>
+                  {React.createElement(PROVIDER_INFO[manageModalProvider].icon, { className: "w-5 h-5" })}
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-foreground">
+                    Add {PROVIDER_INFO[manageModalProvider].name} Data
+                  </h3>
+                  <p className="text-xs text-muted-foreground">Select how you want to ingest metrics for {activeCompany.name}.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setManageModalProvider(null)}
+                className="text-muted-foreground hover:text-foreground cursor-pointer p-1 hover:bg-muted rounded-lg"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3">
+              {/* Option 1: Official API */}
+              <div className="p-3.5 rounded-xl border border-border/60 bg-card hover:bg-muted/40 transition-colors flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500" /> Connect with Official API
+                  </h4>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Automated daily OAuth sync directly from platform servers.</p>
+                </div>
+                <Link
+                  href={isViewer ? '#' : `/api/oauth/${manageModalProvider}/start?companyId=${activeCompany.id}`}
+                  onClick={(e) => {
+                    if (isViewer) e.preventDefault()
+                    setManageModalProvider(null)
+                  }}
+                  className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold px-3 py-1.5 rounded-lg cursor-pointer transition-colors"
+                >
+                  Connect API
+                </Link>
+              </div>
+
+              {/* Option 2: Import CSV / Excel */}
+              <div className="p-3.5 rounded-xl border border-border/60 bg-card hover:bg-muted/40 transition-colors flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <FileSpreadsheet className="w-4 h-4 text-purple-400" /> Import CSV / Excel
+                  </h4>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Upload exported platform reports with intelligent column mapping.</p>
+                </div>
+                <Link
+                  href={`/imports/new?platform=${manageModalProvider}`}
+                  onClick={() => setManageModalProvider(null)}
+                  className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg cursor-pointer transition-colors"
+                >
+                  Upload File
+                </Link>
+              </div>
+
+              {/* Option 3: Manual Entry */}
+              <div className="p-3.5 rounded-xl border border-border/60 bg-card hover:bg-muted/40 transition-colors flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <Edit3 className="w-4 h-4 text-blue-400" /> Enter Metrics Manually
+                  </h4>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Enter high-level account KPIs or bulk content performance records.</p>
+                </div>
+                <Link
+                  href={`/manual-entry/new?platform=${manageModalProvider}`}
+                  onClick={() => setManageModalProvider(null)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg cursor-pointer transition-colors"
+                >
+                  Enter Manually
+                </Link>
+              </div>
+
+              {/* Option 4: Open Platform Dashboard */}
+              <div className="p-3.5 rounded-xl border border-border/60 bg-muted/30 flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <ExternalLink className="w-4 h-4 text-muted-foreground" /> Open Platform Dashboard
+                  </h4>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Open official analytics page in a new tab to export data.</p>
+                </div>
+                <a
+                  href={PROVIDER_INFO[manageModalProvider].insightsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 border border-border/60 hover:bg-muted text-foreground text-xs font-bold px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  Open Portal <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+            </div>
+
+            {/* Guided Instructions */}
+            <div className="bg-muted/40 border border-border/40 rounded-xl p-3.5 space-y-2 text-xs">
+              <h5 className="font-bold text-foreground flex items-center gap-1.5 text-xs">
+                <HelpCircle className="w-4 h-4 text-primary" /> Guided Import Steps
+              </h5>
+              <ol className="list-decimal list-inside text-[11px] text-muted-foreground space-y-1 pl-1">
+                <li>Click <strong>Open Portal</strong> to view official dashboard insights.</li>
+                <li>Select your reporting period and export as CSV or XLSX.</li>
+                <li>Return here and click <strong>Upload File</strong>.</li>
+                <li>Map column headers to Social Report Pro metrics.</li>
+              </ol>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Configure Provider Modal */}
       {modalProvider && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-card/95 border border-border/80 rounded-2xl max-w-md w-full p-6 shadow-2xl relative overflow-hidden z-50 animate-in zoom-in-95 duration-200">
-            {/* Background glow decoration */}
-            <div className="absolute -top-12 -left-12 w-32 h-32 bg-primary/10 rounded-full blur-3xl" />
-            
+          <div className="bg-card border border-border/80 rounded-2xl max-w-md w-full p-6 shadow-2xl relative overflow-hidden z-50">
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-bold text-foreground">
@@ -542,14 +607,14 @@ export default function ConnectionsPage() {
                 </h3>
                 <button
                   onClick={() => setModalProvider(null)}
-                  className="text-muted-foreground hover:text-foreground cursor-pointer transition-colors p-1.5 hover:bg-muted/50 rounded-lg"
+                  className="text-muted-foreground hover:text-foreground cursor-pointer p-1.5 hover:bg-muted/50 rounded-lg"
                 >
                   <XCircle className="w-5 h-5" />
                 </button>
               </div>
 
               <p className="text-xs text-muted-foreground">
-                To connect this platform, you must configure the following environment variables in your server configuration (e.g., your <code className="px-1 py-0.5 bg-muted rounded font-mono text-[10px]">.env.local</code> file).
+                Configure environment variables in your server <code className="px-1 py-0.5 bg-muted rounded font-mono text-[10px]">.env.local</code> file.
               </p>
 
               <div className="space-y-2.5 pt-2">

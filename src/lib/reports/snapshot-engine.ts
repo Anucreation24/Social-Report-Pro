@@ -372,40 +372,68 @@ export async function buildReportSnapshot(
     }
   })
 
-  // 10. Data Availability Summary List
+  // 10. Data Availability & Source Provenance Summary List
+  const { data: dbImportBatches } = await supabase
+    .from('data_import_batches')
+    .select('platform, source_type, original_file_name, created_at, status')
+    .eq('company_id', companyId)
+    .eq('status', 'completed')
+
+  const importBatchesMap = (dbImportBatches || []).reduce((acc, b) => {
+    if (!acc[b.platform]) acc[b.platform] = []
+    acc[b.platform].push(b)
+    return acc
+  }, {} as Record<string, Array<Record<string, any>>>)
+
   const dataAvailability: DataAvailabilityItem[] = [
     {
       key: 'facebook_impressions',
       platform: 'facebook',
       metricName: 'impressions',
-      status: connectedProviders.has('facebook') ? (curImpressions > 0 ? 'available' : 'permission_limited') : 'not_connected',
+      status: connectedProviders.has('facebook') 
+        ? (curImpressions > 0 ? 'available' : 'permission_limited') 
+        : (importBatchesMap['facebook']?.length ? 'available' : 'not_connected'),
       message: connectedProviders.has('facebook')
-        ? (curImpressions > 0 ? 'Facebook Impressions & Reach available' : 'Facebook Impressions unavailable due to Meta permission limitations.')
+        ? (curImpressions > 0 ? 'Facebook Page Insights via Official API' : 'Facebook Impressions unavailable due to Meta permission limitations.')
+        : importBatchesMap['facebook']?.length
+        ? `Facebook metrics ingested via ${importBatchesMap['facebook'][0].original_file_name || 'File Import'}`
         : 'Facebook is not connected for this company.'
     },
     {
       key: 'youtube_analytics',
       platform: 'youtube',
       metricName: 'views',
-      status: connectedProviders.has('youtube') ? 'available' : 'not_connected',
+      status: connectedProviders.has('youtube') 
+        ? 'available' 
+        : (importBatchesMap['youtube']?.length ? 'available' : 'not_connected'),
       message: connectedProviders.has('youtube')
-        ? 'YouTube channel views and content metrics ingested.'
+        ? 'YouTube Channel metrics via Official API'
+        : importBatchesMap['youtube']?.length
+        ? `YouTube metrics ingested via ${importBatchesMap['youtube'][0].original_file_name || 'File Import'}`
         : 'YouTube channel is not connected for this company.'
     },
     {
       key: 'instagram_account',
       platform: 'instagram',
-      status: connectedProviders.has('instagram') ? 'available' : 'not_connected',
+      status: connectedProviders.has('instagram') 
+        ? 'available' 
+        : (importBatchesMap['instagram']?.length ? 'available' : 'not_connected'),
       message: connectedProviders.has('instagram')
-        ? 'Instagram account active.'
+        ? 'Instagram account active via Official API'
+        : importBatchesMap['instagram']?.length
+        ? `Instagram metrics ingested via ${importBatchesMap['instagram'][0].original_file_name || 'File Import / Manual Entry'}`
         : 'Instagram Professional account is not connected.'
     },
     {
       key: 'tiktok_account',
       platform: 'tiktok',
-      status: connectedProviders.has('tiktok') ? 'available' : 'not_connected',
+      status: connectedProviders.has('tiktok') 
+        ? 'available' 
+        : (importBatchesMap['tiktok']?.length ? 'available' : 'not_connected'),
       message: connectedProviders.has('tiktok')
-        ? 'TikTok account active.'
+        ? 'TikTok account active via Official API'
+        : importBatchesMap['tiktok']?.length
+        ? `TikTok metrics ingested via ${importBatchesMap['tiktok'][0].original_file_name || 'File Import / Manual Entry'}`
         : 'TikTok account is not connected.'
     }
   ]
