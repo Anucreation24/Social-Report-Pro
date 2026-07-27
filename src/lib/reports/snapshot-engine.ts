@@ -383,7 +383,7 @@ export async function buildReportSnapshot(
     if (!acc[b.platform]) acc[b.platform] = []
     acc[b.platform].push(b)
     return acc
-  }, {} as Record<string, Array<Record<string, any>>>)
+  }, {} as Record<string, Array<Record<string, unknown>>>)
 
   const dataAvailability: DataAvailabilityItem[] = [
     {

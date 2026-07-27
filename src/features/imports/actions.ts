@@ -15,17 +15,21 @@ export interface UploadParseInput {
   periodEnd?: string
 }
 
+import { detectPlatformFromSignals } from '@/lib/imports/platform-detector'
+import { detectReportTypeFromHeaders } from '@/lib/imports/report-type-detector'
+import { computeFileSignature, matchImportProfile, saveImportProfile } from '@/lib/imports/import-profile-engine'
+
 export async function uploadAndParseImportFileAction(formData: FormData) {
   const supabase = await createClient()
 
   const file = formData.get('file') as File | null
   const companyId = formData.get('companyId') as string
-  const platform = formData.get('platform') as 'facebook' | 'instagram' | 'youtube' | 'tiktok'
-  const importType = formData.get('importType') as 'account_summary' | 'content_performance'
+  let platform = formData.get('platform') as 'facebook' | 'instagram' | 'youtube' | 'tiktok' | null
+  let importType = formData.get('importType') as 'account_summary' | 'content_performance' | null
   const periodStart = formData.get('periodStart') as string || undefined
   const periodEnd = formData.get('periodEnd') as string || undefined
 
-  if (!file || !companyId || !platform || !importType) {
+  if (!file || !companyId) {
     throw new Error('Missing required upload parameters.')
   }
 
@@ -45,10 +49,7 @@ export async function uploadAndParseImportFileAction(formData: FormData) {
   const fileBuffer = Buffer.from(await file.arrayBuffer())
   const checksum = calculateFileChecksum(fileBuffer)
 
-  // 3. Check for File Duplicate
-  const dupCheck = await checkFileDuplicate(supabase, companyId, platform, checksum)
-
-  // 4. Parse Content (CSV vs XLSX)
+  // 3. Parse Content (CSV vs XLSX)
   const ext = file.name.split('.').pop()?.toLowerCase()
   let parsedResult: ParsedFileResult
 
@@ -63,28 +64,42 @@ export async function uploadAndParseImportFileAction(formData: FormData) {
     throw new Error('The uploaded file contains 0 data rows.')
   }
 
-  // 5. Upload original file to private storage bucket 'data-imports'
+  // 4. Platform & Report Type Auto-Detection
+  const platformDetection = detectPlatformFromSignals(parsedResult.headers, file.name, parsedResult.selectedSheet || '')
+  if (!platform || (platform as string) === 'generic') {
+    platform = (platformDetection.detectedPlatform !== 'generic' ? platformDetection.detectedPlatform : 'facebook') as 'facebook' | 'instagram' | 'youtube' | 'tiktok'
+  }
+
+  const reportTypeDetection = detectReportTypeFromHeaders(parsedResult.headers)
+  if (!importType) {
+    importType = reportTypeDetection.detectedReportType
+  }
+
+  // 5. File Signature & Reusable Import Profile Match
+  const effectivePlatform = platform || 'facebook'
+  const fileSig = computeFileSignature(parsedResult.headers, parsedResult.selectedSheet || '')
+  const matchedProfile = await matchImportProfile(supabase, companyId, effectivePlatform, fileSig)
+
+  // 6. Check for File Duplicate
+  const dupCheck = await checkFileDuplicate(supabase, companyId, effectivePlatform, checksum)
+
+  // 7. Upload original file to private storage bucket 'data-imports'
   const dateObj = new Date()
   const year = dateObj.getFullYear()
   const month = String(dateObj.getMonth() + 1).padStart(2, '0')
   const storagePath = `${companyId}/imports/${year}/${month}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
 
-  const { error: uploadError } = await supabase.storage
+  await supabase.storage
     .from('data-imports')
     .upload(storagePath, fileBuffer, {
       contentType: file.type || (ext === 'xlsx' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'text/csv'),
       upsert: true
     })
 
-  if (uploadError) {
-    console.error('Storage upload failed:', uploadError)
-    // Continue even if storage fails, record batch
-  }
+  // 8. Auto-detect Column Mappings (or use saved import profile mapping)
+  const detectedMappings = matchedProfile ? matchedProfile.mapping_config : autoDetectColumnMappings(parsedResult.headers)
 
-  // 6. Auto-detect Column Mappings
-  const detectedMappings = autoDetectColumnMappings(parsedResult.headers)
-
-  // 7. Create staging batch row in data_import_batches
+  // 9. Create staging batch row in data_import_batches
   const sourceType = ext === 'xlsx' ? 'excel_import' : 'csv_import'
   const { data: batchRow, error: batchError } = await supabase
     .from('data_import_batches')
@@ -116,6 +131,12 @@ export async function uploadAndParseImportFileAction(formData: FormData) {
     fileName: file.name,
     fileSizeBytes: file.size,
     checksum,
+    fileSignature: fileSig,
+    detectedPlatformInfo: platformDetection,
+    detectedReportTypeInfo: reportTypeDetection,
+    matchedProfile,
+    platform,
+    importType,
     isDuplicateFile: dupCheck.isDuplicate,
     existingBatch: dupCheck.existingBatch,
     headers: parsedResult.headers,
@@ -153,7 +174,7 @@ export async function confirmImportBatchAction(input: ConfirmImportInput) {
   let validCount = 0
   let invalidCount = 0
   let warningCount = 0
-  let duplicateCount = 0
+  const duplicateCount = 0
   let importedCount = 0
 
   const snapshotInserts: Record<string, unknown>[] = []
@@ -430,4 +451,34 @@ export async function archiveImportBatchAction(batchId: string) {
 
   if (error) throw new Error(`Failed to archive import: ${error.message}`)
   return { success: true }
+}
+
+export async function createImportProfileFromBatchAction(
+  companyId: string,
+  platform: string,
+  profileName: string,
+  reportType: string,
+  fileSignature: string,
+  headers: string[],
+  mappings: FieldMapping[],
+  dateFormat = 'auto'
+) {
+  const supabase = await createClient()
+
+  const perm = await verifyCompanyPermission(companyId, ['owner', 'admin', 'marketing_manager'])
+  if (!perm.authorized) throw new Error('Unauthorized')
+
+  const profile = await saveImportProfile(
+    supabase,
+    companyId,
+    platform,
+    profileName,
+    reportType,
+    fileSignature,
+    headers,
+    mappings,
+    dateFormat
+  )
+
+  return { success: true, profile }
 }

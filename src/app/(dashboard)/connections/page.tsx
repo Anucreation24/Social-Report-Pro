@@ -15,7 +15,6 @@ import {
   XCircle, 
   Trash2, 
   RefreshCw, 
-  Settings, 
   Activity,
   Calendar,
   ShieldCheck,
@@ -23,8 +22,7 @@ import {
   Edit3,
   ExternalLink,
   PlusCircle,
-  HelpCircle,
-  FileText
+  HelpCircle
 } from 'lucide-react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'

@@ -1,15 +1,14 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import React, { useState } from 'react'
 import Link from 'next/link'
 import { useCompany } from '@/components/providers/CompanyProvider'
-import { uploadAndParseImportFileAction, confirmImportBatchAction } from '@/features/imports/actions'
+import { uploadAndParseImportFileAction, confirmImportBatchAction, createImportProfileFromBatchAction } from '@/features/imports/actions'
 import { FieldMapping, NormalizedField } from '@/lib/imports/column-mapping'
 import { TEMPLATE_DEFINITIONS } from '@/lib/imports/templates'
 import { 
-  FileSpreadsheet, ArrowLeft, UploadCloud, Loader2, AlertCircle, CheckCircle2, 
-  HelpCircle, Download, FileText, ChevronRight, RefreshCw, AlertTriangle, XCircle
+  ArrowLeft, UploadCloud, Loader2, AlertCircle, CheckCircle2, 
+  HelpCircle, Download, FileText, ChevronRight, AlertTriangle, Sparkles, Save, Shield
 } from 'lucide-react'
 
 type PlatformType = 'facebook' | 'instagram' | 'youtube' | 'tiktok'
@@ -47,22 +46,16 @@ const NORMALIZED_FIELD_OPTIONS: Array<{ id: NormalizedField; label: string }> = 
   { id: 'ignore', label: '-- Ignore Column --' }
 ]
 
-export default function NewImportPage() {
+export default function UniversalImportPage() {
   const { activeCompany } = useCompany()
-  const router = useRouter()
-  const searchParams = useSearchParams()
 
-  const initialPlatform = (searchParams.get('platform') as PlatformType) || 'facebook'
-
-  // Step Control (1 to 6)
+  // Step Control (1 to 5)
   const [step, setStep] = useState<number>(1)
-  const [platform, setPlatform] = useState<PlatformType>(initialPlatform)
+  const [platform, setPlatform] = useState<PlatformType>('facebook')
   const [importType, setImportType] = useState<ImportType>('account_summary')
-  const [periodStart, setPeriodStart] = useState<string>('')
-  const [periodEnd, setPeriodEnd] = useState<string>('')
   const [dateFormatPref, setDateFormatPref] = useState<'auto' | 'DMY' | 'MDY'>('auto')
 
-  // Upload & Parser state
+  // Upload & Detection State
   const [file, setFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState<boolean>(false)
   const [parsingError, setParsingError] = useState<string | null>(null)
@@ -71,6 +64,21 @@ export default function NewImportPage() {
     fileName: string
     fileSizeBytes: number
     checksum: string
+    fileSignature?: string
+    detectedPlatformInfo?: {
+      detectedPlatform: string
+      confidence: number
+      matchedSignals: string[]
+      requiresConfirmation: boolean
+    }
+    detectedReportTypeInfo?: {
+      detectedReportType: ImportType
+      confidence: number
+      matchedReason: string
+    }
+    matchedProfile?: Record<string, unknown> | null
+    platform: PlatformType
+    importType: ImportType
     isDuplicateFile: boolean
     existingBatch?: Record<string, unknown>
     headers: string[]
@@ -79,8 +87,11 @@ export default function NewImportPage() {
     totalRows: number
   } | null>(null)
 
-  // Mappings State
+  // Mappings & Profile State
   const [mappings, setMappings] = useState<FieldMapping[]>([])
+  const [profileName, setProfileName] = useState('')
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [profileSaved, setProfileSaved] = useState(false)
   const [confirming, setConfirming] = useState<boolean>(false)
   const [importResult, setImportResult] = useState<{
     batchId: string
@@ -91,12 +102,6 @@ export default function NewImportPage() {
     invalidRows: number
     warningRows: number
   } | null>(null)
-
-  useEffect(() => {
-    if (parsedData?.detectedMappings) {
-      setMappings(parsedData.detectedMappings)
-    }
-  }, [parsedData])
 
   const handleFileUpload = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -109,14 +114,13 @@ export default function NewImportPage() {
       const formData = new FormData()
       formData.append('file', file)
       formData.append('companyId', activeCompany.id)
-      formData.append('platform', platform)
-      formData.append('importType', importType)
-      if (periodStart) formData.append('periodStart', periodStart)
-      if (periodEnd) formData.append('periodEnd', periodEnd)
 
       const result = await uploadAndParseImportFileAction(formData)
-      setParsedData(result)
-      setStep(3) // Advance to Column Mapping
+      setParsedData(result as unknown as typeof parsedData)
+      setPlatform(result.platform as PlatformType)
+      setImportType(result.importType as ImportType)
+      setMappings(result.detectedMappings)
+      setStep(2) // Advance to Platform Detection & Confirmation
     } catch (err: unknown) {
       console.error('Upload parse error:', err)
       setParsingError((err as Error).message || 'Failed to upload and parse file.')
@@ -135,6 +139,28 @@ export default function NewImportPage() {
     )
   }
 
+  const handleSaveImportProfile = async () => {
+    if (!parsedData || !activeCompany || !profileName.trim()) return
+    setSavingProfile(true)
+    try {
+      await createImportProfileFromBatchAction(
+        activeCompany.id,
+        platform,
+        profileName.trim(),
+        importType,
+        parsedData.fileSignature || 'sig',
+        parsedData.headers,
+        mappings,
+        dateFormatPref
+      )
+      setProfileSaved(true)
+    } catch (err: unknown) {
+      console.error('Save profile error:', err)
+    } finally {
+      setSavingProfile(false)
+    }
+  }
+
   const handleExecuteImport = async () => {
     if (!parsedData || !activeCompany) return
 
@@ -148,21 +174,19 @@ export default function NewImportPage() {
         platform,
         importType,
         mappings,
-        rawRows: parsedData.sampleRows, // sample rows or full parsed data
+        rawRows: parsedData.sampleRows,
         dateFormatPreference: dateFormatPref
       })
 
       setImportResult(res)
-      setStep(5) // Advance to Summary Result
+      setStep(5) // Result Summary
     } catch (err: unknown) {
-      console.error('Import confirmation error:', err)
+      console.error('Import execution error:', err)
       setParsingError((err as Error).message || 'Failed to execute import.')
     } finally {
       setConfirming(false)
     }
   }
-
-  const templateKey = `${platform}_${importType}`
 
   if (!activeCompany) return null
 
@@ -173,11 +197,11 @@ export default function NewImportPage() {
         <div>
           <Link href="/connections" className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground font-semibold mb-2 transition-colors">
             <ArrowLeft className="w-3.5 h-3.5" />
-            Back to Connections & Data
+            Back to Platform Connections
           </Link>
-          <h1 className="text-3xl font-extrabold tracking-tight">Import Analytics File</h1>
+          <h1 className="text-3xl font-extrabold tracking-tight">Universal Data Import Wizard</h1>
           <p className="text-xs text-muted-foreground mt-1">
-            Upload CSV or XLSX reports for {activeCompany.name} with column mapping and deduplication.
+            Upload any social media CSV/XLSX export with automatic platform detection, report type detection, and reusable import profiles for {activeCompany.name}.
           </p>
         </div>
       </div>
@@ -185,10 +209,10 @@ export default function NewImportPage() {
       {/* Progress Steps Header */}
       <div className="grid grid-cols-5 gap-2 text-center text-xs font-bold border-b border-border/50 pb-4">
         <div className={`p-2 rounded-lg border ${step === 1 ? 'bg-primary/10 border-primary text-primary' : 'bg-muted/30 border-border/40 text-muted-foreground'}`}>
-          1. Platform & Type
+          1. Upload File
         </div>
         <div className={`p-2 rounded-lg border ${step === 2 ? 'bg-primary/10 border-primary text-primary' : 'bg-muted/30 border-border/40 text-muted-foreground'}`}>
-          2. File Upload
+          2. Platform & Type
         </div>
         <div className={`p-2 rounded-lg border ${step === 3 ? 'bg-primary/10 border-primary text-primary' : 'bg-muted/30 border-border/40 text-muted-foreground'}`}>
           3. Column Mapping
@@ -205,135 +229,32 @@ export default function NewImportPage() {
         <div className="p-4 bg-destructive/10 border border-destructive/20 text-destructive text-xs rounded-xl flex items-start gap-3">
           <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
           <div>
-            <h4 className="font-bold">Import Warning / Error</h4>
+            <h4 className="font-bold">Import Error</h4>
             <p className="mt-0.5">{parsingError}</p>
           </div>
         </div>
       )}
 
-      {/* STEP 1: Platform & Import Type Selection */}
+      {/* STEP 1: Universal File Upload */}
       {step === 1 && (
-        <div className="bg-card border border-border/60 rounded-2xl p-6 space-y-6">
-          <div className="space-y-4">
-            <h3 className="text-base font-bold text-foreground">Select Target Platform</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {PLATFORM_OPTIONS.map(p => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => setPlatform(p.id)}
-                  className={`p-4 rounded-xl border text-left cursor-pointer transition-all ${
-                    platform === p.id
-                      ? 'bg-primary/10 border-primary text-primary font-bold'
-                      : 'bg-muted/30 border-border/60 hover:bg-muted text-muted-foreground'
-                  }`}
-                >
-                  <span className="capitalize text-sm">{p.name}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="space-y-4 pt-4 border-t border-border/40">
-            <h3 className="text-base font-bold text-foreground">Select Import Category</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <label className={`p-4 rounded-xl border cursor-pointer transition-all flex items-start gap-3 ${
-                importType === 'account_summary' ? 'bg-primary/10 border-primary text-primary' : 'bg-muted/30 border-border/60 text-muted-foreground'
-              }`}>
-                <input
-                  type="radio"
-                  name="importType"
-                  value="account_summary"
-                  checked={importType === 'account_summary'}
-                  onChange={() => setImportType('account_summary')}
-                  className="mt-1"
-                />
-                <div>
-                  <h4 className="font-bold text-sm text-foreground">Account Summary Metrics</h4>
-                  <p className="text-xs text-muted-foreground mt-0.5">High-level page metrics (Followers, Reach, Impressions, Total Views, Engagements).</p>
-                </div>
-              </label>
-
-              <label className={`p-4 rounded-xl border cursor-pointer transition-all flex items-start gap-3 ${
-                importType === 'content_performance' ? 'bg-primary/10 border-primary text-primary' : 'bg-muted/30 border-border/60 text-muted-foreground'
-              }`}>
-                <input
-                  type="radio"
-                  name="importType"
-                  value="content_performance"
-                  checked={importType === 'content_performance'}
-                  onChange={() => setImportType('content_performance')}
-                  className="mt-1"
-                />
-                <div>
-                  <h4 className="font-bold text-sm text-foreground">Content Performance (Posts/Videos)</h4>
-                  <p className="text-xs text-muted-foreground mt-0.5">Individual post analytics (Post Title, Views, Likes, Comments, Shares, Saves, Watch Time).</p>
-                </div>
-              </label>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-border/40">
-            <div>
-              <label className="block text-xs font-bold text-foreground mb-1.5">Reporting Period Start (Optional)</label>
-              <input
-                type="date"
-                value={periodStart}
-                onChange={e => setPeriodStart(e.target.value)}
-                className="w-full bg-muted/40 border border-border/60 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-primary"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-foreground mb-1.5">Reporting Period End (Optional)</label>
-              <input
-                type="date"
-                value={periodEnd}
-                onChange={e => setPeriodEnd(e.target.value)}
-                className="w-full bg-muted/40 border border-border/60 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-primary"
-              />
-            </div>
-          </div>
-
-          <div className="flex justify-end pt-4">
-            <button
-              onClick={() => setStep(2)}
-              className="inline-flex items-center gap-1 bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs px-5 py-2.5 rounded-xl cursor-pointer transition-colors"
-            >
-              Next: Upload File <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* STEP 2: Upload File & Template Downloads */}
-      {step === 2 && (
         <form onSubmit={handleFileUpload} className="bg-card border border-border/60 rounded-2xl p-6 space-y-6">
           <div className="flex items-center justify-between">
-            <h3 className="text-base font-bold text-foreground">Upload CSV or XLSX File</h3>
-            {TEMPLATE_DEFINITIONS[templateKey] && (
-              <div className="flex items-center gap-2">
-                <a
-                  href={`/api/templates/download?template=${templateKey}&format=csv&sample=true`}
-                  className="inline-flex items-center gap-1 text-[11px] font-bold text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 px-2.5 py-1.5 rounded-lg transition-colors"
-                  download
-                >
-                  <Download className="w-3.5 h-3.5" /> CSV Template
-                </a>
-                <a
-                  href={`/api/templates/download?template=${templateKey}&format=xlsx&sample=true`}
-                  className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 px-2.5 py-1.5 rounded-lg transition-colors"
-                  download
-                >
-                  <Download className="w-3.5 h-3.5" /> Excel Template
-                </a>
-              </div>
-            )}
+            <h3 className="text-base font-bold text-foreground">Select or Drop Export File</h3>
+            <div className="flex items-center gap-2">
+              <a
+                href="/api/templates/download?template=facebook_account_summary&format=csv&sample=true"
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-purple-400 bg-purple-500/10 border border-purple-500/20 px-2 py-1 rounded-lg"
+                download
+              >
+                <Download className="w-3.5 h-3.5" /> Sample CSV Template
+              </a>
+            </div>
           </div>
 
-          <div className="border-2 border-dashed border-border/80 hover:border-primary/60 rounded-2xl p-8 text-center bg-muted/20 transition-all">
-            <UploadCloud className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-            <p className="text-xs font-bold text-foreground">Drag and drop your file here, or click to browse</p>
-            <p className="text-[11px] text-muted-foreground mt-1">Supports .csv or .xlsx up to 10 MB</p>
+          <div className="border-2 border-dashed border-border/80 hover:border-primary/60 rounded-2xl p-10 text-center bg-muted/20 transition-all">
+            <UploadCloud className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+            <p className="text-sm font-bold text-foreground">Upload Meta, Instagram, YouTube, or TikTok Export</p>
+            <p className="text-xs text-muted-foreground mt-1">Automatic platform & column detection supported (.csv, .xlsx up to 10 MB)</p>
 
             <input
               type="file"
@@ -350,26 +271,19 @@ export default function NewImportPage() {
             )}
           </div>
 
-          <div className="flex items-center justify-between pt-4">
-            <button
-              type="button"
-              onClick={() => setStep(1)}
-              className="text-xs font-bold px-4 py-2 rounded-xl bg-secondary text-secondary-foreground border border-border/60 hover:bg-secondary/80 cursor-pointer"
-            >
-              Back
-            </button>
+          <div className="flex justify-end pt-4 border-t border-border/40">
             <button
               type="submit"
               disabled={!file || uploading}
-              className="inline-flex items-center gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs px-5 py-2.5 rounded-xl disabled:opacity-50 cursor-pointer transition-colors"
+              className="inline-flex items-center gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs px-6 py-2.5 rounded-xl disabled:opacity-50 cursor-pointer transition-colors shadow-sm"
             >
               {uploading ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" /> Uploading & Parsing...
+                  <Loader2 className="w-4 h-4 animate-spin" /> Auto-Detecting Platform & Signals...
                 </>
               ) : (
                 <>
-                  Parse File & Map Columns <ChevronRight className="w-4 h-4" />
+                  <Sparkles className="w-4 h-4" /> Auto-Detect & Process File <ChevronRight className="w-4 h-4" />
                 </>
               )}
             </button>
@@ -377,25 +291,114 @@ export default function NewImportPage() {
         </form>
       )}
 
-      {/* STEP 3: Column Mapping Editor */}
-      {step === 3 && parsedData && (
+      {/* STEP 2: Platform & Report Type Confirmation */}
+      {step === 2 && parsedData && (
         <div className="bg-card border border-border/60 rounded-2xl p-6 space-y-6">
-          {parsedData.isDuplicateFile && (
-            <div className="p-4 bg-amber-500/10 border border-amber-500/20 text-amber-500 text-xs rounded-xl flex items-start gap-3">
-              <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+          {/* Signal Detection Banner */}
+          <div className="p-4 bg-primary/10 border border-primary/20 rounded-xl space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-primary flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4" /> Platform Signal Detector Results
+              </span>
+              <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                (parsedData.detectedPlatformInfo?.confidence || 0) >= 0.8
+                  ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                  : 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
+              }`}>
+                {Math.round((parsedData.detectedPlatformInfo?.confidence || 0.5) * 100)}% Confidence
+              </span>
+            </div>
+            <p className="text-xs text-foreground font-medium">
+              Detected Platform: <strong className="capitalize text-primary">{parsedData.detectedPlatformInfo?.detectedPlatform || platform}</strong> | Report Category: <strong className="capitalize text-primary">{parsedData.detectedReportTypeInfo?.detectedReportType || importType}</strong>
+            </p>
+          </div>
+
+          {parsedData.matchedProfile && (
+            <div className="p-4 bg-purple-500/10 border border-purple-500/20 text-purple-400 text-xs rounded-xl flex items-start gap-3">
+              <Shield className="w-5 h-5 shrink-0 mt-0.5" />
               <div>
-                <h4 className="font-bold">Duplicate File Detected</h4>
-                <p className="mt-0.5">
-                  This file appears to match an existing import batch (<strong>{String(parsedData.existingBatch?.originalFileName || 'Imported File')}</strong> imported on {new Date(String(parsedData.existingBatch?.importedAt || '')).toLocaleDateString()}).
-                </p>
+                <h4 className="font-bold">Saved Import Profile Matched!</h4>
+                <p className="mt-0.5">Applied saved mapping profile: <strong>{String(parsedData.matchedProfile.profile_name)}</strong></p>
               </div>
             </div>
           )}
 
+          {/* Confirm or Override Platform & Category */}
+          <div className="space-y-4 pt-2">
+            <h3 className="text-base font-bold text-foreground">Confirm Target Platform</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {PLATFORM_OPTIONS.map(p => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setPlatform(p.id)}
+                  className={`p-3.5 rounded-xl border text-left cursor-pointer transition-all ${
+                    platform === p.id
+                      ? 'bg-primary/10 border-primary text-primary font-bold'
+                      : 'bg-muted/30 border-border/60 hover:bg-muted text-muted-foreground'
+                  }`}
+                >
+                  <span className="capitalize text-xs">{p.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-3 pt-4 border-t border-border/40">
+            <h3 className="text-base font-bold text-foreground">Confirm Report Category</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <label className={`p-3.5 rounded-xl border cursor-pointer flex items-center gap-3 ${
+                importType === 'account_summary' ? 'bg-primary/10 border-primary text-primary' : 'bg-muted/30 border-border/60 text-muted-foreground'
+              }`}>
+                <input
+                  type="radio"
+                  name="importType"
+                  value="account_summary"
+                  checked={importType === 'account_summary'}
+                  onChange={() => setImportType('account_summary')}
+                />
+                <span className="text-xs font-bold text-foreground">Account Summary (Followers, Views, Engagements)</span>
+              </label>
+
+              <label className={`p-3.5 rounded-xl border cursor-pointer flex items-center gap-3 ${
+                importType === 'content_performance' ? 'bg-primary/10 border-primary text-primary' : 'bg-muted/30 border-border/60 text-muted-foreground'
+              }`}>
+                <input
+                  type="radio"
+                  name="importType"
+                  value="content_performance"
+                  checked={importType === 'content_performance'}
+                  onChange={() => setImportType('content_performance')}
+                />
+                <span className="text-xs font-bold text-foreground">Content Performance (Individual Post Metrics)</span>
+              </label>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-4 border-t border-border/40">
+            <button
+              onClick={() => setStep(1)}
+              className="text-xs font-bold px-4 py-2 rounded-xl bg-secondary text-secondary-foreground border border-border/60 hover:bg-secondary/80"
+            >
+              Back
+            </button>
+            <button
+              onClick={() => setStep(3)}
+              className="inline-flex items-center gap-1 bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs px-5 py-2.5 rounded-xl cursor-pointer transition-colors"
+            >
+              Next: Column Mapping <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* STEP 3: Column Mapping Editor */}
+      {step === 3 && parsedData && (
+        <div className="bg-card border border-border/60 rounded-2xl p-6 space-y-6">
           <div>
-            <h3 className="text-base font-bold text-foreground">Map File Columns to Metrics</h3>
+            <h3 className="text-base font-bold text-foreground">Review Column Mappings</h3>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Review auto-detected metric mappings for <strong>{parsedData.fileName}</strong> ({parsedData.totalRows} rows).
+              Verify headers for <strong>{parsedData.fileName}</strong> ({parsedData.totalRows} rows).
             </p>
           </div>
 
@@ -404,7 +407,6 @@ export default function NewImportPage() {
               <div key={m.fileColumn} className="p-3 bg-muted/30 border border-border/40 rounded-xl flex items-center justify-between gap-4">
                 <div className="min-w-[200px]">
                   <span className="font-mono text-xs font-bold text-foreground">{m.fileColumn}</span>
-                  <span className="block text-[10px] text-muted-foreground">Header in source file</span>
                 </div>
 
                 <div className="flex-1 max-w-sm">
@@ -418,30 +420,38 @@ export default function NewImportPage() {
                     ))}
                   </select>
                 </div>
-
-                <div>
-                  {m.confidence === 'high' ? (
-                    <span className="text-[10px] font-bold text-emerald-500 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-                      Auto High Match
-                    </span>
-                  ) : m.confidence === 'medium' ? (
-                    <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
-                      Medium Match
-                    </span>
-                  ) : (
-                    <span className="text-[10px] font-bold text-muted-foreground bg-muted border border-border/40 px-2 py-0.5 rounded-full">
-                      Ignored
-                    </span>
-                  )}
-                </div>
               </div>
             ))}
+          </div>
+
+          {/* Option to Save Import Profile */}
+          <div className="p-4 bg-muted/40 border border-border/40 rounded-xl space-y-3">
+            <h4 className="text-xs font-bold text-foreground flex items-center gap-1.5">
+              <Save className="w-4 h-4 text-primary" /> Save as Reusable Import Profile
+            </h4>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="Profile Name (e.g. Meta Monthly Export)"
+                value={profileName}
+                onChange={e => setProfileName(e.target.value)}
+                className="flex-1 bg-background border border-border/60 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-primary"
+              />
+              <button
+                type="button"
+                onClick={handleSaveImportProfile}
+                disabled={savingProfile || profileSaved || !profileName.trim()}
+                className="inline-flex items-center gap-1 bg-secondary hover:bg-secondary/80 text-secondary-foreground font-bold text-xs px-4 py-1.5 rounded-xl border border-border/60 disabled:opacity-50 cursor-pointer"
+              >
+                {profileSaved ? 'Profile Saved!' : 'Save Profile'}
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center justify-between pt-4 border-t border-border/40">
             <button
               onClick={() => setStep(2)}
-              className="text-xs font-bold px-4 py-2 rounded-xl bg-secondary text-secondary-foreground border border-border/60 hover:bg-secondary/80 cursor-pointer"
+              className="text-xs font-bold px-4 py-2 rounded-xl bg-secondary text-secondary-foreground border border-border/60 hover:bg-secondary/80"
             >
               Back
             </button>
@@ -449,7 +459,7 @@ export default function NewImportPage() {
               onClick={() => setStep(4)}
               className="inline-flex items-center gap-1 bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs px-5 py-2.5 rounded-xl cursor-pointer transition-colors"
             >
-              Next: Preview Data <ChevronRight className="w-4 h-4" />
+              Next: Validation & Preview <ChevronRight className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -459,46 +469,10 @@ export default function NewImportPage() {
       {step === 4 && parsedData && (
         <div className="bg-card border border-border/60 rounded-2xl p-6 space-y-6">
           <div>
-            <h3 className="text-base font-bold text-foreground">Data Preview & Validation</h3>
+            <h3 className="text-base font-bold text-foreground">Data Validation & Preview</h3>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Review sample parsed records before confirming database insertion.
+              Review sample rows before database commit.
             </p>
-          </div>
-
-          {/* Date format preference selector */}
-          <div className="p-3 bg-muted/40 border border-border/40 rounded-xl flex items-center justify-between">
-            <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
-              <HelpCircle className="w-4 h-4 text-primary" /> Date Format Resolution:
-            </span>
-            <div className="flex items-center gap-2">
-              <label className="text-xs text-muted-foreground flex items-center gap-1">
-                <input
-                  type="radio"
-                  name="datePref"
-                  value="auto"
-                  checked={dateFormatPref === 'auto'}
-                  onChange={() => setDateFormatPref('auto')}
-                /> Auto (ISO/Standard)
-              </label>
-              <label className="text-xs text-muted-foreground flex items-center gap-1">
-                <input
-                  type="radio"
-                  name="datePref"
-                  value="DMY"
-                  checked={dateFormatPref === 'DMY'}
-                  onChange={() => setDateFormatPref('DMY')}
-                /> DD/MM/YYYY
-              </label>
-              <label className="text-xs text-muted-foreground flex items-center gap-1">
-                <input
-                  type="radio"
-                  name="datePref"
-                  value="MDY"
-                  checked={dateFormatPref === 'MDY'}
-                  onChange={() => setDateFormatPref('MDY')}
-                /> MM/DD/YYYY
-              </label>
-            </div>
           </div>
 
           <div className="overflow-x-auto max-h-72 border border-border/40 rounded-xl">
@@ -529,24 +503,16 @@ export default function NewImportPage() {
           <div className="flex items-center justify-between pt-4 border-t border-border/40">
             <button
               onClick={() => setStep(3)}
-              className="text-xs font-bold px-4 py-2 rounded-xl bg-secondary text-secondary-foreground border border-border/60 hover:bg-secondary/80 cursor-pointer"
+              className="text-xs font-bold px-4 py-2 rounded-xl bg-secondary text-secondary-foreground border border-border/60 hover:bg-secondary/80"
             >
               Back
             </button>
             <button
               onClick={handleExecuteImport}
               disabled={confirming}
-              className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-6 py-2.5 rounded-xl disabled:opacity-50 cursor-pointer transition-colors"
+              className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-6 py-2.5 rounded-xl disabled:opacity-50 cursor-pointer transition-colors shadow-sm"
             >
-              {confirming ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" /> Saving Import Batch...
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="w-4 h-4" /> Confirm & Execute Import
-                </>
-              )}
+              {confirming ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} Confirm & Import
             </button>
           </div>
         </div>
@@ -561,48 +527,15 @@ export default function NewImportPage() {
 
           <div>
             <h3 className="text-2xl font-extrabold tracking-tight text-foreground">Import Batch Completed!</h3>
-            <p className="text-xs text-muted-foreground mt-1">
-              Successfully processed and saved metrics into Social Report Pro database.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-2xl mx-auto">
-            <div className="p-4 bg-muted/30 border border-border/40 rounded-xl text-center">
-              <span className="block text-xl font-extrabold text-foreground">{importResult.totalRows}</span>
-              <span className="text-[10px] text-muted-foreground font-semibold">Total Rows</span>
-            </div>
-            <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-center">
-              <span className="block text-xl font-extrabold text-emerald-500">{importResult.importedRows}</span>
-              <span className="text-[10px] text-emerald-500 font-semibold">Imported Records</span>
-            </div>
-            <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl text-center">
-              <span className="block text-xl font-extrabold text-amber-500">{importResult.warningRows}</span>
-              <span className="text-[10px] text-amber-500 font-semibold">Warnings</span>
-            </div>
-            <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-center">
-              <span className="block text-xl font-extrabold text-destructive">{importResult.invalidRows}</span>
-              <span className="text-[10px] text-destructive font-semibold">Invalid Rows</span>
-            </div>
+            <p className="text-xs text-muted-foreground mt-1">Successfully ingested into Social Report Pro database.</p>
           </div>
 
           <div className="flex items-center justify-center gap-3 pt-4 border-t border-border/40">
-            <Link
-              href="/dashboard"
-              className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs px-5 py-2.5 rounded-xl cursor-pointer transition-colors"
-            >
-              View Dashboard
+            <Link href="/dashboard" className="bg-primary text-primary-foreground font-bold text-xs px-5 py-2.5 rounded-xl">
+              Dashboard
             </Link>
-            <Link
-              href="/analytics"
-              className="bg-secondary hover:bg-secondary/80 text-secondary-foreground font-bold text-xs px-5 py-2.5 rounded-xl border border-border/60 transition-colors"
-            >
-              View Analytics
-            </Link>
-            <Link
-              href="/reports/generate"
-              className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition-colors"
-            >
-              Generate Report
+            <Link href="/analytics" className="bg-secondary text-secondary-foreground font-bold text-xs px-5 py-2.5 rounded-xl border border-border/60">
+              Analytics
             </Link>
           </div>
         </div>

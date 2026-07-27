@@ -1,13 +1,13 @@
 'use client'
 
 import React, { useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useCompany } from '@/components/providers/CompanyProvider'
 import { saveManualKPIEntryAction, saveManualContentEntryAction, ManualContentItem } from '@/features/manual-entry/actions'
 import { 
-  Edit3, ArrowLeft, Loader2, AlertCircle, CheckCircle2, 
-  Plus, Trash2, Copy, FileText, Send, Calendar
+  ArrowLeft, Loader2, AlertCircle, CheckCircle2, 
+  Plus, Trash2, Copy, Send
 } from 'lucide-react'
 
 type PlatformType = 'facebook' | 'instagram' | 'youtube' | 'tiktok'
@@ -22,7 +22,6 @@ const PLATFORMS: Array<{ id: PlatformType; name: string }> = [
 
 export default function ManualEntryPage() {
   const { activeCompany } = useCompany()
-  const router = useRouter()
   const searchParams = useSearchParams()
 
   const initialPlatform = (searchParams.get('platform') as PlatformType) || 'facebook'
@@ -120,7 +119,7 @@ export default function ManualEntryPage() {
     setContentItems(prev => [
       ...prev,
       {
-        id: String(Date.now()),
+        id: `item_${prev.length + 1}`,
         title: '',
         contentType: 'post',
         publishedAt: new Date().toISOString().split('T')[0],
@@ -134,7 +133,7 @@ export default function ManualEntryPage() {
   const handleDuplicateContentRow = (idx: number) => {
     const target = contentItems[idx]
     if (!target) return
-    const cloned = { ...target, id: String(Date.now()), title: `${target.title} (Copy)` }
+    const cloned = { ...target, id: `copy_${idx}_${contentItems.length}`, title: `${target.title} (Copy)` }
     const updated = [...contentItems]
     updated.splice(idx + 1, 0, cloned)
     setContentItems(updated)

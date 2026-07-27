@@ -1,6 +1,6 @@
 import { createClient } from './supabase/server'
 
-export type CompanyRole = 'owner' | 'admin' | 'marketing_manager' | 'viewer'
+export type CompanyRole = 'owner' | 'admin' | 'marketing_manager' | 'viewer' | 'client_viewer'
 
 export interface UserPermission {
   userId: string

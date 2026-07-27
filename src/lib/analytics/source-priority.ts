@@ -9,7 +9,7 @@ export interface ProvenanceRecord {
   metric_date?: string
   metric_name: string
   metric_value: number
-  data_source?: DataSourceType
+  data_source?: DataSourceType | string
   source_priority?: number
   import_batch_id?: string
   source_reference?: string

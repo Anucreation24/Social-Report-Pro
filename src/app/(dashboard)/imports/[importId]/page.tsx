@@ -4,8 +4,7 @@ import React, { useEffect, useState, use } from 'react'
 import Link from 'next/link'
 import { getImportDetailAction } from '@/features/imports/actions'
 import { 
-  ArrowLeft, FileSpreadsheet, Download, Loader2, AlertCircle, CheckCircle2, 
-  Calendar, User, FileText, Check, XCircle
+  ArrowLeft, Download, Loader2, AlertCircle
 } from 'lucide-react'
 
 interface ImportDetailPageProps {

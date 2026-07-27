@@ -1,6 +1,6 @@
 import Papa from 'papaparse'
 import ExcelJS from 'exceljs'
-import { FieldMapping, NormalizedField } from './column-mapping'
+import { FieldMapping } from './column-mapping'
 
 export interface ParsedFileResult {
   fileName: string
@@ -79,7 +79,7 @@ export async function parseXLSXBuffer(buffer: Buffer, fileName = 'upload.xlsx', 
   const workbook = new ExcelJS.Workbook()
   
   try {
-    await workbook.xlsx.load(buffer as any)
+    await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0])
   } catch (err: unknown) {
     const msg = (err as Error).message || ''
     if (msg.includes('encrypted') || msg.includes('password')) {

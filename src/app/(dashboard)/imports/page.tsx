@@ -6,7 +6,7 @@ import { useCompany } from '@/components/providers/CompanyProvider'
 import { getImportHistoryAction, archiveImportBatchAction } from '@/features/imports/actions'
 import { 
   FileSpreadsheet, Plus, Filter, Loader2, AlertCircle, CheckCircle2, 
-  Trash2, Eye, Calendar, FileText, RefreshCw, XCircle
+  Trash2, Eye
 } from 'lucide-react'
 
 interface ImportBatchRow {
@@ -54,6 +54,7 @@ export default function ImportHistoryPage() {
   }, [activeCompany, platformFilter])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchHistory()
   }, [fetchHistory])
 

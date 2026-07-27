@@ -8,7 +8,7 @@ export interface DbSnapshotRow extends ProvenanceRecord {
   aggregation_level?: string
   provider: string
   social_account_id?: string
-  data_source?: any
+  data_source?: string
   source_priority?: number
 }
 
