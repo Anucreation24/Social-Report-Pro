@@ -1,138 +1,129 @@
-# Social Report Pro
+# Social Report Pro — Production Release Candidate v1.0.0
 
-Social Report Pro is a multi-company social media analytics and reporting SaaS platform. It connects business social media accounts, aggregates analytics, tracks performance KPIs, and generates weekly and monthly marketing reports.
+**Social Report Pro** is an enterprise-grade social media analytics aggregation, historical sync, and white-label report generation engine built for digital marketing agencies and multi-company brand managers.
 
-Initially supported platforms:
-- Facebook Pages
-- Instagram Professional Accounts
-- YouTube Channels
-- TikTok Creator & Business Accounts
+- **Production Deployment:** [https://social-report-pro.vercel.app](https://social-report-pro.vercel.app)
+- **GitHub Repository:** [https://github.com/Anucreation24/Social-Report-Pro.git](https://github.com/Anucreation24/Social-Report-Pro.git)
+- **Supabase Backend:** [https://utqcgethipyrnmmicdbb.supabase.co](https://utqcgethipyrnmmicdbb.supabase.co)
 
 ---
 
-## 🛠️ Tech Stack
-- **Framework**: Next.js 16 (App Router)
-- **Language**: TypeScript
-- **Styling**: Tailwind CSS v4
-- **Database & Auth**: Supabase PostgreSQL & Auth (SSR-ready)
-- **Forms & Validation**: React Hook Form, Zod
-- **Icons**: Lucide React
-- **Charts**: Recharts
+## Key Features
+
+### 🏢 Multi-Company Agency Architecture
+- Manage multiple client companies within a single agency workspace.
+- Granular Role-Based Access Control (RBAC): `owner`, `admin`, `marketing_manager`, `viewer`, `client_viewer`.
+- Strict company & client data isolation enforced via Supabase Row Level Security (RLS) policies and server-side route permission guards (`/access-denied`).
+
+### 🔗 Social Platform Connectors & Sync Engine
+- Direct OAuth 2.0 API connections for **Facebook Pages** and **YouTube Channels**.
+- Connectors for **Instagram** and **TikTok**.
+- AES-256-GCM authenticated encryption for access and refresh tokens.
+- Source Priority Hierarchy: Ensures API data (Rank 1) takes priority over file imports (Ranks 2-3) and manual entries (Rank 4) without double counting.
+
+### 📥 Universal Import Wizard & Reusable Profiles
+- Drag-and-drop file import supporting `.csv` and `.xlsx` up to 10 MB.
+- Heuristic platform signal detector (`platform-detector.ts`) automatically detecting Facebook, Instagram, YouTube, and TikTok exports with confidence scores.
+- Report category detector (`account_summary` vs `content_performance`).
+- Reusable import profiles (`import_profiles`) matching column signatures for instant 1-click ingestion.
+
+### 📝 Manual Data Import & KPI Entry
+- Safe fallback modules for manual KPI entry and manual post content metrics.
+- Comprehensive unit normalizer supporting standard numbers, percentages, thousand multipliers (`K`, `M`, `B`), currency, and time durations (`MM:SS`, `HH:MM:SS`).
+
+### 📄 Automated Report Generator & Snapshots
+- 1-click weekly and monthly performance report generation.
+- Immutable report snapshot engine capturing point-in-time metrics.
+- High-fidelity PDF downloads (`@react-pdf/renderer`) and Excel spreadsheet exports (`exceljs`).
+- Automated strategic executive summaries and prioritized recommendation engine.
+
+### 👥 Client Portal & Shared Report Links
+- Dedicated white-label Client Portal (`/client/*`) displaying performance overviews, top post cards, approved reports, and review actions.
+- Cryptographically secure hashed report share links (`/shared/reports/[token]`) supporting expiration (1, 7, 30 days), revocation, optional password protection, and download controls.
+- Client report review & approval workflow (`approved`, `revision_requested`, internal vs client-visible notes).
+
+### 🎨 White-Label Branding System
+- Brand customization (`/settings/branding`) supporting primary/secondary/accent hex colors, company logos, custom footer text, and welcome messages with a live preview simulator.
+- Precedence hierarchy: Company Specific Branding > Agency Default Branding > System Fallback.
 
 ---
 
-## 🚀 Getting Started Locally
+## Tech Stack & Architecture
 
-### 1. Clone & Set Up Directory
-Clone the repository and install dependencies:
-```bash
-git clone https://github.com/Anucreation24/Social-Report-Pro.git
-cd social-report-pro
-npm install
-```
+- **Framework:** Next.js 16 (App Router + Turbopack + `src/proxy.ts` modernization)
+- **UI & Styling:** React 19, Vanilla TailwindCSS v4, Lucide Icons, Recharts
+- **Database & Auth:** Supabase PostgreSQL + Supabase Auth + Row Level Security (RLS)
+- **File Parsing & Generation:** PapaParse (CSV), ExcelJS (Spreadsheets), @react-pdf/renderer (PDF Documents)
+- **Testing & Quality:** Node Test Runner + tsx (75/75 passing), ESLint (0 errors), TypeScript (0 errors)
 
-### 2. Environment Configuration
-Create a `.env.local` file in the root of the project using the template below:
+---
+
+## Installation & Setup
+
+### Prerequisites
+- Node.js >= 20.0.0
+- npm >= 10.0.0
+- Supabase Project
+
+### Environment Configuration
+Create a `.env.local` file in the root directory:
+
 ```env
-NEXT_PUBLIC_SUPABASE_URL=your-supabase-project-url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
-SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
-
+NEXT_PUBLIC_SUPABASE_URL=https://your-supabase-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+ENCRYPTION_KEY=32_byte_hex_encryption_key
 NEXT_PUBLIC_APP_URL=http://localhost:3000
-
-# Social Auth Connectors (Stage 2 Placeholders)
-META_APP_ID=
-META_APP_SECRET=
-META_REDIRECT_URI=http://localhost:3000/api/auth/callback/facebook
-
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-GOOGLE_REDIRECT_URI=http://localhost:3000/api/auth/callback/google
-
-TIKTOK_CLIENT_KEY=
-TIKTOK_CLIENT_SECRET=
-TIKTOK_REDIRECT_URI=http://localhost:3000/api/auth/callback/tiktok
-
-TOKEN_ENCRYPTION_KEY=super-secret-key-at-least-32-chars-long!!
-CRON_SECRET=cron-secret-token-here
+FACEBOOK_APP_ID=your_facebook_app_id
+FACEBOOK_APP_SECRET=your_facebook_app_secret
+YOUTUBE_CLIENT_ID=your_youtube_client_id
+YOUTUBE_CLIENT_SECRET=your_youtube_client_secret
 ```
 
-### 3. Database Migration Setup
-Since the project is using a dedicated Supabase instance, you must execute the database migrations schema to create the required tables, helper functions, triggers, and Row Level Security (RLS) policies.
+### Local Development Commands
 
-Copy and paste the SQL statements from the migration file [20260719000000_init_schema.sql](file:///C:/Users/Skyfall/.gemini/antigravity/scratch/social-report-pro/supabase/migrations/20260719000000_init_schema.sql) directly into your Supabase project **SQL Editor** and click **Run**.
-
-### 4. Run Development Server
 ```bash
+# Install dependencies
+npm install
+
+# Run development server
 npm run dev
-```
-Open [http://localhost:3000](http://localhost:3000) in your browser.
 
----
-
-## 📁 Project Structure
-
-```text
-src/
-├── app/                  # App Router Pages & Layouts
-│   ├── (auth)/           # Auth Routes (Login, Register, Forgot Password, Reset)
-│   ├── (dashboard)/      # Protected Dashboard & Analytics Switcher Pages
-│   ├── onboarding/       # Company & Workspace Setup Flow
-│   ├── layout.tsx        # App Root layout
-│   └── page.tsx          # Product landing page
-├── components/           # Reusable Components
-│   └── providers/        # Context Providers (CompanyProvider)
-├── features/             # Business Domain Features
-│   ├── auth/             # Authentication State & Actions
-│   └── companies/        # Multi-Company Actions & Configurations
-├── lib/                  # Shared Utility Libraries
-│   ├── supabase/         # Supabase client, server, and middleware SSR configs
-│   ├── permissions.ts    # Role access permission guard helper
-│   └── audit.ts          # Action Audit Logging Module
-```
-
----
-
----
-
-## 🔒 Security Architecture
-- **Row Level Security (RLS)**: Enabled across all tables. Tenant isolation prevents companies from reading or writing other companies' data.
-- **Role Enforcement**: User actions are constrained by company roles (`owner`, `admin`, `marketing_manager`, `viewer`). Enforced both via server actions and database RLS.
-- **Audit Trails**: Security actions are recorded in `audit_logs` with automated token/credential redaction.
-- **Browser Storage Security**: Browser Local Storage only maintains the non-secret UI state (`activeCompanyId`), whilst Session Storage is entirely empty. All session authentication uses encrypted secure cookies, and API secret keys are isolated exclusively on the server.
-
----
-
-## ⚙️ Settings Module & Appearance Theme
-- **Profile Configuration**: View account emails, update full names, customize avatars, and configure personal timezones.
-- **Company Management**: Owners and administrators can edit active company identity settings or soft-delete (archive) companies.
-- **Report & Notification Defaults**: Establish automated output preferences and customize in-app warning parameters.
-- **Theme Switcher**: Integrates `next-themes` to support Light, Dark, and System default appearance preferences seamlessly across the dashboard layout shell.
-
----
-
-## 🏛️ Database Migrations
-1. **Initial Migration**: `supabase/migrations/20260719000000_init_schema.sql` establishes the initial SQL database structure and `handle_onboarding` RPC function.
-2. **Settings & Company Management Migration**: `supabase/migrations/20260719120000_stage1_settings_and_company_management.sql` establishes `updated_at` triggers, `create_additional_company` RPC function, and extra policies.
-
-To apply database tables, copy and paste the SQL content from **both** migration files into your Supabase **SQL Editor** and click **Run**.
-
----
-
-## 🧪 Testing Commands
-Run node permission tests:
-```bash
+# Run unit and integration tests
 npm run test
-```
-Run eslint validation check:
-```bash
-npm run lint
-```
-Run typescript check:
-```bash
+
+# Run TypeScript type check
 npm run typecheck
-```
-Build the production bundle:
-```bash
+
+# Run ESLint audit
+npm run lint
+
+# Build production bundle
 npm run build
 ```
+
+---
+
+## Database Migrations
+
+Apply all SQL migrations located in `supabase/migrations/` in chronological order:
+
+1. `20260719000000_init_schema.sql` — Core schemas and member roles.
+2. `20260719120000_stage1_settings_and_company_management.sql` — Workspace settings.
+3. `20260719130000_stage2_connector_framework.sql` — OAuth connection tables.
+4. `20260719140000_fix_stage2_connector_schema.sql` — Platform connection updates.
+5. `20260719150000_fix_legacy_token_constraints.sql` — Token security updates.
+6. `20260719160000_fix_credentials_rls.sql` — Credential encryption policies.
+7. `20260719170000_add_store_encrypted_credentials_rpc.sql` — Token RPC function.
+8. `20260722000000_stage3_historical_sync_engine.sql` — Analytics snapshots & content tables.
+9. `20260722120000_repair_sync_engine_schema_and_rls.sql` — Analytics RLS policies.
+10. `20260723000000_repair_stage3_missing_columns.sql` — Provider columns & indexes.
+11. `20260723120000_stage4_report_generator.sql` — Generated reports tables.
+12. `20260727120000_stage45_manual_import.sql` — Import batches & provenance columns.
+13. `20260728000000_stage46_agency_client_portal.sql` — Share links, import profiles, branding, invitations, and notifications.
+
+---
+
+## License
+
+Copyright © 2026 Social Report Pro. All rights reserved.
