@@ -28,6 +28,7 @@ export function computeFileSignature(headers: string[], sheetName = ''): string 
 
 /**
  * Searches for an existing saved import profile for this company & platform with matching file signature.
+ * Safely handles empty results or database errors.
  */
 export async function matchImportProfile(
   supabase: SupabaseClient,
@@ -35,18 +36,23 @@ export async function matchImportProfile(
   platform: string,
   fileSignature: string
 ): Promise<ImportProfile | null> {
-  const { data, error } = await supabase
-    .from('import_profiles')
-    .select('*')
-    .eq('company_id', companyId)
-    .eq('platform', platform)
-    .eq('file_signature', fileSignature)
-    .is('archived_at', null)
-    .order('created_at', { ascending: false })
-    .limit(1)
+  try {
+    const { data, error } = await supabase
+      .from('import_profiles')
+      .select('*')
+      .eq('company_id', companyId)
+      .eq('platform', platform)
+      .eq('file_signature', fileSignature)
+      .is('archived_at', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
 
-  if (error || !data || data.length === 0) return null
-  return data[0] as ImportProfile
+    if (error || !data || data.length === 0) return null
+    return data[0] as ImportProfile
+  } catch (err) {
+    console.error('matchImportProfile error:', err)
+    return null
+  }
 }
 
 /**
@@ -65,25 +71,30 @@ export async function saveImportProfile(
 ): Promise<ImportProfile> {
   const { data: { user } } = await supabase.auth.getUser()
 
-  const { data, error } = await supabase
-    .from('import_profiles')
-    .insert({
-      company_id: companyId,
-      platform,
-      profile_name: profileName,
-      report_type: reportType,
-      file_signature: fileSignature,
-      header_signature: headers,
-      mapping_config: mappings as unknown as Record<string, unknown>,
-      date_format: dateFormat,
-      created_by: user?.id || null
-    })
-    .select('*')
-    .single()
+  try {
+    const { data, error } = await supabase
+      .from('import_profiles')
+      .insert({
+        company_id: companyId,
+        platform,
+        profile_name: profileName,
+        report_type: reportType,
+        file_signature: fileSignature,
+        header_signature: headers,
+        mapping_config: mappings as unknown as Record<string, unknown>,
+        date_format: dateFormat,
+        created_by: user?.id || null
+      })
+      .select('*')
+      .single()
 
-  if (error || !data) {
-    throw new Error(`Failed to save import profile: ${error?.message || 'Database error'}`)
+    if (error || !data) {
+      throw new Error(`Failed to save import profile: ${error?.message || 'Database error'}`)
+    }
+
+    return data as ImportProfile
+  } catch (err) {
+    console.error('saveImportProfile error:', err)
+    throw err
   }
-
-  return data as ImportProfile
 }

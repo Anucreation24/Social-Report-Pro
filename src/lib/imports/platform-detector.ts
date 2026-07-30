@@ -3,36 +3,82 @@ export type PlatformSignal = 'facebook' | 'instagram' | 'youtube' | 'tiktok' | '
 export interface PlatformDetectionResult {
   detectedPlatform: PlatformSignal
   confidence: number // 0.0 to 1.0
+  confidenceLevel: 'high' | 'medium' | 'low'
   matchedSignals: string[]
   conflictingSignals: string[]
   requiresConfirmation: boolean
 }
 
-const PLATFORM_SIGNALS: Record<PlatformSignal, string[]> = {
+interface SignalDefinition {
+  signal: string
+  weight: number // 3 = high, 1 = medium
+}
+
+const PLATFORM_WEIGHTED_SIGNALS: Record<PlatformSignal, SignalDefinition[]> = {
   facebook: [
-    'page followers', 'page reach', 'page impressions', 'meta business suite',
-    'facebook', 'post engagements', 'page likes', 'facebook page', 'post reach',
-    'page_impressions_unique', 'page_fans'
+    { signal: 'page followers', weight: 3 },
+    { signal: 'page reach', weight: 3 },
+    { signal: 'page impressions', weight: 3 },
+    { signal: 'meta business suite', weight: 3 },
+    { signal: 'facebook page', weight: 3 },
+    { signal: 'page_impressions_unique', weight: 3 },
+    { signal: 'page_fans', weight: 3 },
+    { signal: 'facebook', weight: 3 },
+    { signal: 'post reach', weight: 2 },
+    { signal: 'post engagements', weight: 1 },
+    { signal: 'page likes', weight: 1 }
   ],
   instagram: [
-    'accounts engaged', 'accounts reached', 'reels interactions', 'instagram',
-    'profile activity', 'story views', 'ig_reach', 'instagram_followers',
-    'profile_visits', 'reels_views'
+    { signal: 'reels interactions', weight: 3 },
+    { signal: 'ig_reach', weight: 3 },
+    { signal: 'instagram_followers', weight: 3 },
+    { signal: 'reels_views', weight: 3 },
+    { signal: 'accounts engaged', weight: 3 },
+    { signal: 'accounts reached', weight: 3 },
+    { signal: 'story views', weight: 3 },
+    { signal: 'instagram', weight: 3 },
+    { signal: 'profile_visits', weight: 2 }
   ],
   youtube: [
-    'subscribers', 'watch time (hours)', 'average view duration', 'impressions click-through rate',
-    'youtube studio', 'youtube', 'watch_time_hours', 'channel_subscribers',
-    'views_by_video', 'estimated_minutes_watched'
+    { signal: 'subscribers', weight: 3 },
+    { signal: 'watch time (hours)', weight: 3 },
+    { signal: 'average view duration', weight: 3 },
+    { signal: 'impressions click-through rate', weight: 3 },
+    { signal: 'youtube studio', weight: 3 },
+    { signal: 'youtube', weight: 3 },
+    { signal: 'watch_time_hours', weight: 3 },
+    { signal: 'channel_subscribers', weight: 3 },
+    { signal: 'views_by_video', weight: 3 },
+    { signal: 'estimated_minutes_watched', weight: 3 }
   ],
   tiktok: [
-    'video views', 'total viewers', 'watched full video', 'tiktok studio',
-    'tiktok', 'profile views', 'sound_used', 'video_completion_rate'
+    // High-weight TikTok signals (3 pts each)
+    { signal: 'video views', weight: 3 },
+    { signal: 'profile views', weight: 3 },
+    { signal: 'watched full video', weight: 3 },
+    { signal: 'total viewers', weight: 3 },
+    { signal: 'tiktok studio', weight: 3 },
+    { signal: 'tiktok', weight: 3 },
+    { signal: 'sound_used', weight: 3 },
+    { signal: 'video_completion_rate', weight: 3 },
+    // Medium-weight signals (1 pt each)
+    { signal: 'likes', weight: 1 },
+    { signal: 'comments', weight: 1 },
+    { signal: 'shares', weight: 1 },
+    { signal: 'overview', weight: 1 }
   ],
-  generic: ['date', 'followers', 'views', 'reach', 'impressions', 'engagements']
+  generic: [
+    { signal: 'date', weight: 1 },
+    { signal: 'followers', weight: 1 },
+    { signal: 'views', weight: 1 },
+    { signal: 'reach', weight: 1 },
+    { signal: 'impressions', weight: 1 },
+    { signal: 'engagements', weight: 1 }
+  ]
 }
 
 /**
- * Detects platform automatically from file headers, sheet names, and file title using deterministic signal matching heuristics.
+ * Detects platform automatically from file headers, sheet names, and file title using weighted signal matching heuristics.
  */
 export function detectPlatformFromSignals(
   headers: string[],
@@ -53,14 +99,21 @@ export function detectPlatformFromSignals(
     generic: { score: 0, matches: [] }
   };
 
-  // Evaluate matching signals
-  (Object.keys(PLATFORM_SIGNALS) as PlatformSignal[]).forEach(platform => {
+  // Evaluate weighted matching signals
+  (Object.keys(PLATFORM_WEIGHTED_SIGNALS) as PlatformSignal[]).forEach(platform => {
     if (platform === 'generic') return
-    const signals = PLATFORM_SIGNALS[platform]
-    signals.forEach(sig => {
-      if (normalizedText.includes(sig)) {
-        scores[platform].score += 1
-        scores[platform].matches.push(sig)
+    const signals = PLATFORM_WEIGHTED_SIGNALS[platform]
+    signals.forEach(({ signal, weight }) => {
+      // Check if signal matches in header list or normalized file context
+      const isHeaderMatch = headers.some(h => h.toLowerCase().trim() === signal || h.toLowerCase().replace(/_/g, ' ').trim() === signal)
+      const isTextMatch = normalizedText.includes(signal)
+
+      if (isHeaderMatch || isTextMatch) {
+        // Prevent duplicate scoring for same signal
+        if (!scores[platform].matches.includes(signal)) {
+          scores[platform].score += weight
+          scores[platform].matches.push(signal)
+        }
       }
     })
   })
@@ -76,22 +129,31 @@ export function detectPlatformFromSignals(
     }
   })
 
-  // Calculate confidence score (0.0 to 1.0)
+  // Determine confidence & level
   let confidence = 0
-  if (highestScore >= 3) {
+  let confidenceLevel: 'high' | 'medium' | 'low' = 'low'
+
+  if (highestScore >= 5) {
     confidence = 0.95
-  } else if (highestScore === 2) {
+    confidenceLevel = 'high'
+  } else if (highestScore >= 3) {
     confidence = 0.85
-  } else if (highestScore === 1) {
+    confidenceLevel = 'high'
+  } else if (highestScore >= 2) {
     confidence = 0.65
+    confidenceLevel = 'medium'
+  } else if (highestScore >= 1) {
+    confidence = 0.40
+    confidenceLevel = 'low'
   } else {
     confidence = 0.20
+    confidenceLevel = 'low'
     topPlatform = 'generic'
   }
 
   const conflicting: string[] = []
   Object.entries(scores).forEach(([plat, data]) => {
-    if (plat !== topPlatform && data.score >= 1 && plat !== 'generic') {
+    if (plat !== topPlatform && data.score >= 3 && plat !== 'generic') {
       conflicting.push(plat)
     }
   })
@@ -101,6 +163,7 @@ export function detectPlatformFromSignals(
   return {
     detectedPlatform: topPlatform,
     confidence,
+    confidenceLevel,
     matchedSignals: scores[topPlatform]?.matches || [],
     conflictingSignals: conflicting,
     requiresConfirmation

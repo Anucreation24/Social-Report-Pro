@@ -7,8 +7,8 @@ import { generateCSVTemplate } from '../src/lib/imports/templates.ts'
 
 test('Stage 4.5 — Template Generator', () => {
   const csv = generateCSVTemplate('facebook_account_summary', true)
-  assert.ok(csv.includes('date'), 'CSV template should contain date header')
-  assert.ok(csv.includes('followers'), 'CSV template should contain followers header')
+  assert.ok(csv.toLowerCase().includes('date'), 'CSV template should contain date header')
+  assert.ok(csv.toLowerCase().includes('followers'), 'CSV template should contain followers header')
 })
 
 test('Stage 4.5 — Unit Normalizer Engine', () => {

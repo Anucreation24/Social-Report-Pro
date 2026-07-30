@@ -20,6 +20,9 @@ export interface NormalizedRowResult {
   errors: string[]
   warnings: string[]
   duplicateKey?: string
+  isDerivedEngagement?: boolean
+  derivedFrom?: string[]
+  missingYearDetected?: boolean
 }
 
 /**
@@ -42,7 +45,6 @@ export function validateFileMetadata(file: { name: string; size: number; type?: 
  * Parses raw CSV content from string or Buffer.
  */
 export function parseCSVContent(contentString: string, fileName = 'upload.csv'): ParsedFileResult {
-  // Strip BOM if present
   const cleanContent = contentString.startsWith('\uFEFF') ? contentString.slice(1) : contentString
 
   const parsed = Papa.parse<Record<string, string>>(cleanContent, {
@@ -103,51 +105,41 @@ export async function parseXLSXBuffer(buffer: Buffer, fileName = 'upload.xlsx', 
   const headers: string[] = []
   const rows: Record<string, string | number | null>[] = []
 
-  // Read header row (Row 1)
-  const firstRow = worksheet.getRow(1)
-  firstRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-    const headerVal = String(cell.value || `Column_${colNumber}`).trim()
-    headers.push(headerVal)
+  let headerRowIndex = 1
+  worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+    if (headers.length === 0 && rowNumber <= 5) {
+      const values = Array.isArray(row.values) ? row.values.slice(1) : []
+      const stringValues = values.map(v => (v !== null && v !== undefined ? String(v).trim() : ''))
+      if (stringValues.some(v => v.length > 0)) {
+        headerRowIndex = rowNumber
+        stringValues.forEach((v, idx) => headers.push(v || `Column_${idx + 1}`))
+      }
+    }
   })
 
-  if (headers.length === 0) {
-    throw new Error('No header columns found in Row 1 of worksheet.')
-  }
-
-  // Read data rows starting from Row 2
   worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-    if (rowNumber === 1) return // skip header
-
+    if (rowNumber <= headerRowIndex) return
     const rowObj: Record<string, string | number | null> = {}
-    let hasData = false
+    const values = Array.isArray(row.values) ? row.values.slice(1) : []
 
-    headers.forEach((header, idx) => {
-      const cell = row.getCell(idx + 1)
-      let val: string | number | null = null
-
-      if (cell.value !== null && cell.value !== undefined) {
-        if (typeof cell.value === 'object') {
-          // Handle Excel formula, result, or rich text
-          if ('result' in cell.value) {
-            val = (cell.value as { result?: string | number }).result ?? null
-          } else if ('text' in cell.value) {
-            val = (cell.value as { text?: string }).text ?? null
-          } else if (cell.value instanceof Date) {
-            val = cell.value.toISOString().split('T')[0]
-          } else {
-            val = String(cell.value)
-          }
+    headers.forEach((h, idx) => {
+      const rawVal = values[idx]
+      if (rawVal !== undefined && rawVal !== null) {
+        if (typeof rawVal === 'object' && 'result' in rawVal) {
+          rowObj[h] = (rawVal as { result: string | number }).result
+        } else if (typeof rawVal === 'object' && 'text' in rawVal) {
+          rowObj[h] = (rawVal as { text: string }).text
+        } else if (rawVal instanceof Date) {
+          rowObj[h] = rawVal.toISOString().split('T')[0]
         } else {
-          val = cell.value as string | number
+          rowObj[h] = rawVal as string | number
         }
+      } else {
+        rowObj[h] = null
       }
-
-      if (val !== null && String(val).trim() !== '') {
-        hasData = true
-      }
-      rowObj[header] = val
     })
 
+    const hasData = Object.values(rowObj).some(v => v !== null && v !== '')
     if (hasData) {
       rows.push(rowObj)
     }
@@ -165,19 +157,25 @@ export async function parseXLSXBuffer(buffer: Buffer, fileName = 'upload.xlsx', 
 }
 
 /**
- * Normalizes compact strings like "1.2K", "3.4M", "1,250", "15.4%" into numbers.
+ * Normalizes numeric strings, percentages, and multipliers (1.2K -> 1200, 3.4M -> 3400000).
  */
 export function normalizeNumericValue(val: unknown): number | null {
   if (val === null || val === undefined || val === '') return null
-  if (typeof val === 'number') {
-    if (isNaN(val) || !isFinite(val)) return null
-    return val
+  if (typeof val === 'number') return isNaN(val) ? null : val
+
+  const str = String(val).trim()
+  if (str === '-' || str === 'N/A' || str === 'null' || str === 'undefined') return null
+
+  // Time format: HH:MM:SS or MM:SS
+  const timeParts = str.split(':')
+  if (timeParts.length === 2 || timeParts.length === 3) {
+    const numbers = timeParts.map(p => parseFloat(p))
+    if (numbers.every(n => !isNaN(n))) {
+      if (numbers.length === 2) return numbers[0] * 60 + numbers[1]
+      if (numbers.length === 3) return numbers[0] * 3600 + numbers[1] * 60 + numbers[2]
+    }
   }
 
-  const str = String(val).trim().toUpperCase()
-  if (str === '') return null
-
-  // Compact notation: 1.2K -> 1200, 3.4M -> 3400000
   let multiplier = 1
   let cleanStr = str.replace(/[,$\u20AC\u00A3]/g, '')
 
@@ -197,11 +195,38 @@ export function normalizeNumericValue(val: unknown): number | null {
   return parsed * multiplier
 }
 
+const MONTH_NAMES: Record<string, number> = {
+  january: 0, jan: 0,
+  february: 1, feb: 1,
+  march: 2, mar: 2,
+  april: 3, apr: 3,
+  may: 4,
+  june: 5, jun: 5,
+  july: 6, jul: 6,
+  august: 7, aug: 7,
+  september: 8, sep: 8, sept: 8,
+  october: 9, oct: 9,
+  november: 10, nov: 10,
+  december: 11, dec: 11
+}
+
+export interface DateParseResult {
+  date: string | null
+  ambiguous: boolean
+  missingYear?: boolean
+  detectedFormat?: string
+  error?: string
+}
+
 /**
- * Parses and normalizes dates (YYYY-MM-DD, ISO, DD/MM/YYYY, MM/DD/YYYY, Excel serial dates).
- * Returns dateString and ambiguous warning flag.
+ * Parses and normalizes dates (YYYY-MM-DD, ISO, DD/MM/YYYY, MM/DD/YYYY, Excel serial dates, MMMM D).
+ * If year is missing (e.g. "October 1"), flags missingYear and uses selectedYear if supplied.
  */
-export function parseAndNormalizeDate(val: unknown, preferredFormat: 'auto' | 'DMY' | 'MDY' = 'auto'): { date: string | null; ambiguous: boolean; error?: string } {
+export function parseAndNormalizeDate(
+  val: unknown,
+  preferredFormat: 'auto' | 'DMY' | 'MDY' = 'auto',
+  selectedYear?: number
+): DateParseResult {
   if (val === null || val === undefined || val === '') {
     return { date: null, ambiguous: false, error: 'Date is missing.' }
   }
@@ -221,7 +246,31 @@ export function parseAndNormalizeDate(val: unknown, preferredFormat: 'auto' | 'D
 
   const str = String(val).trim()
 
-  // 3. YYYY-MM-DD or YYYY/MM/DD
+  // 3. Check for MMMM D or D MMMM format missing year (e.g. "October 1", "Oct 1", "1 October")
+  const alphaMatch1 = str.match(/^([A-Za-z]+)\s+(\d{1,2})$/)
+  const alphaMatch2 = str.match(/^(\d{1,2})\s+([A-Za-z]+)$/)
+
+  if (alphaMatch1 || alphaMatch2) {
+    const monthStr = (alphaMatch1 ? alphaMatch1[1] : alphaMatch2![2]).toLowerCase()
+    const day = parseInt(alphaMatch1 ? alphaMatch1[2] : alphaMatch2![1], 10)
+
+    if (monthStr in MONTH_NAMES && day >= 1 && day <= 31) {
+      const monthIdx = MONTH_NAMES[monthStr]
+      if (selectedYear) {
+        const d = new Date(Date.UTC(selectedYear, monthIdx, day))
+        return { date: d.toISOString().split('T')[0], ambiguous: false, missingYear: false }
+      }
+      return {
+        date: null,
+        ambiguous: false,
+        missingYear: true,
+        detectedFormat: 'MMMM D',
+        error: 'Please confirm reporting year.'
+      }
+    }
+  }
+
+  // 4. YYYY-MM-DD or YYYY/MM/DD
   const isoMatch = str.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/)
   if (isoMatch) {
     const y = parseInt(isoMatch[1], 10)
@@ -231,7 +280,7 @@ export function parseAndNormalizeDate(val: unknown, preferredFormat: 'auto' | 'D
     return { date: dateObj.toISOString().split('T')[0], ambiguous: false }
   }
 
-  // 4. Slash / Dash formats: DD/MM/YYYY vs MM/DD/YYYY
+  // 5. Slash / Dash formats: DD/MM/YYYY vs MM/DD/YYYY
   const slashedMatch = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})/)
   if (slashedMatch) {
     const num1 = parseInt(slashedMatch[1], 10)
@@ -243,23 +292,19 @@ export function parseAndNormalizeDate(val: unknown, preferredFormat: 'auto' | 'D
     let month = num2
     let isAmbiguous = false
 
-    // Ambiguous if both <= 12 and different
     if (num1 <= 12 && num2 <= 12 && num1 !== num2) {
       isAmbiguous = true
       if (preferredFormat === 'MDY') {
         month = num1
         day = num2
       } else {
-        // Default DMY (DD/MM/YYYY)
         day = num1
         month = num2
       }
     } else if (num1 > 12) {
-      // First number > 12 -> must be DD/MM/YYYY
       day = num1
       month = num2
     } else if (num2 > 12) {
-      // Second number > 12 -> must be MM/DD/YYYY
       month = num1
       day = num2
     }
@@ -284,6 +329,7 @@ export function parseAndNormalizeDate(val: unknown, preferredFormat: 'auto' | 'D
 
 /**
  * Normalizes a single row based on user's field mappings and validates constraints.
+ * Supports partial metric acceptance, dynamic engagement derivation, and preserves null for missing metrics.
  */
 export function normalizeAndValidateRow(
   row: Record<string, unknown>,
@@ -292,19 +338,24 @@ export function normalizeAndValidateRow(
   companyId: string,
   platform: string,
   importType: string,
-  dateFormatPreference: 'auto' | 'DMY' | 'MDY' = 'auto'
+  dateFormatPreference: 'auto' | 'DMY' | 'MDY' = 'auto',
+  selectedYear?: number
 ): NormalizedRowResult {
   const normalizedData: Record<string, unknown> = {}
   const errors: string[] = []
   const warnings: string[] = []
+  let missingYearDetected = false
 
   mappings.forEach(m => {
     if (m.mappedField === 'ignore') return
     const rawVal = row[m.fileColumn]
 
     if (m.mappedField === 'date' || m.mappedField === 'published_at') {
-      const parsedDate = parseAndNormalizeDate(rawVal, dateFormatPreference)
-      if (parsedDate.error) {
+      const parsedDate = parseAndNormalizeDate(rawVal, dateFormatPreference, selectedYear)
+      if (parsedDate.missingYear) {
+        missingYearDetected = true
+        errors.push(`Column '${m.fileColumn}' date '${rawVal}' is missing year. Please confirm reporting year.`)
+      } else if (parsedDate.error) {
         errors.push(`Column '${m.fileColumn}': ${parsedDate.error}`)
       } else {
         normalizedData[m.mappedField] = parsedDate.date
@@ -315,7 +366,7 @@ export function normalizeAndValidateRow(
     } else if (m.mappedField === 'content_id' || m.mappedField === 'title' || m.mappedField === 'caption' || m.mappedField === 'content_type' || m.mappedField === 'permalink') {
       normalizedData[m.mappedField] = rawVal !== null && rawVal !== undefined ? String(rawVal).trim() : null
     } else {
-      // Numeric KPI fields
+      // Numeric KPI fields - preserve null if missing (DO NOT convert to 0)
       const numVal = normalizeNumericValue(rawVal)
       if (rawVal !== null && rawVal !== undefined && rawVal !== '' && numVal === null) {
         errors.push(`Column '${m.fileColumn}' value '${rawVal}' is not a valid number.`)
@@ -324,7 +375,6 @@ export function normalizeAndValidateRow(
           errors.push(`Column '${m.fileColumn}' metric cannot be negative (${numVal}).`)
         }
 
-        // Special unit conversion: watch_time_seconds if raw header indicated minutes
         if (m.mappedField === 'watch_time_seconds' && m.fileColumn.toLowerCase().includes('min')) {
           normalizedData[m.mappedField] = numVal !== null ? Math.round(numVal * 60) : null
         } else {
@@ -334,17 +384,44 @@ export function normalizeAndValidateRow(
     }
   })
 
-  // Check mandatory fields
-  if (importType === 'account_summary' && !normalizedData.date) {
-    errors.push('Row missing required date field.')
+  // Engagement Derivation: engagements = likes + comments + shares if engagements column not present
+  let isDerivedEngagement = false
+  let derivedFrom: string[] | undefined = undefined
+
+  const hasImportedEngagements = normalizedData.engagements !== undefined && normalizedData.engagements !== null
+  const hasLikes = typeof normalizedData.likes === 'number'
+  const hasComments = typeof normalizedData.comments === 'number'
+  const hasShares = typeof normalizedData.shares === 'number'
+
+  if (!hasImportedEngagements && (hasLikes || hasComments || hasShares)) {
+    const l = (normalizedData.likes as number) || 0
+    const c = (normalizedData.comments as number) || 0
+    const s = (normalizedData.shares as number) || 0
+    normalizedData.engagements = l + c + s
+    isDerivedEngagement = true
+    derivedFrom = ['likes', 'comments', 'shares']
   }
-  if (importType === 'content_performance' && !normalizedData.published_at && !normalizedData.title) {
+
+  // Check mandatory fields: At least one date or period and at least one metric/title
+  if ((importType === 'account_summary' || importType === 'daily_overview') && !normalizedData.date) {
+    if (!missingYearDetected) {
+      errors.push('Row missing required date field.')
+    }
+  }
+  if ((importType === 'content_performance' || importType === 'video_performance') && !normalizedData.published_at && !normalizedData.title) {
     errors.push('Content performance row missing required published_at date or title.')
+  }
+
+  // Verify at least one recognized metric or date exists
+  const numericMetricKeys = ['audience_total', 'views', 'engagements', 'likes', 'comments', 'shares', 'profile_views', 'reach', 'impressions']
+  const hasAnyMetric = numericMetricKeys.some(k => normalizedData[k] !== undefined && normalizedData[k] !== null)
+  if (!hasAnyMetric && !normalizedData.date && !normalizedData.title) {
+    errors.push('Row does not contain any recognized social metrics or dates.')
   }
 
   // Construct row duplicate key
   let duplicateKey = ''
-  if (importType === 'account_summary') {
+  if (importType === 'account_summary' || importType === 'daily_overview') {
     duplicateKey = `${companyId}:${platform}:${normalizedData.date || 'nodate'}`
   } else {
     const provId = normalizedData.content_id || normalizedData.permalink || normalizedData.title || 'noid'
@@ -360,7 +437,10 @@ export function normalizeAndValidateRow(
     status,
     errors,
     warnings,
-    duplicateKey
+    duplicateKey,
+    isDerivedEngagement,
+    derivedFrom,
+    missingYearDetected
   }
 }
 
@@ -368,6 +448,6 @@ export function parseUnitValue(val: unknown): number | null {
   return normalizeNumericValue(val)
 }
 
-export function parseFlexibleDate(val: unknown, preferredFormat: 'auto' | 'DMY' | 'MDY' = 'auto'): string | null {
-  return parseAndNormalizeDate(val, preferredFormat).date
+export function parseFlexibleDate(val: unknown, preferredFormat: 'auto' | 'DMY' | 'MDY' = 'auto', selectedYear?: number): string | null {
+  return parseAndNormalizeDate(val, preferredFormat, selectedYear).date
 }

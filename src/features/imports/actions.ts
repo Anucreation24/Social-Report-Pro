@@ -25,7 +25,7 @@ export async function uploadAndParseImportFileAction(formData: FormData) {
   const file = formData.get('file') as File | null
   const companyId = formData.get('companyId') as string
   let platform = formData.get('platform') as 'facebook' | 'instagram' | 'youtube' | 'tiktok' | null
-  let importType = formData.get('importType') as 'account_summary' | 'content_performance' | null
+  let importType = formData.get('importType') as ConfirmImportInput['importType'] | null
   const periodStart = formData.get('periodStart') as string || undefined
   const periodEnd = formData.get('periodEnd') as string || undefined
 
@@ -152,10 +152,11 @@ export interface ConfirmImportInput {
   batchId: string
   companyId: string
   platform: 'facebook' | 'instagram' | 'youtube' | 'tiktok'
-  importType: 'account_summary' | 'content_performance'
+  importType: 'account_summary' | 'daily_overview' | 'content_performance' | 'video_performance' | 'audience_growth' | 'generic_metrics'
   mappings: FieldMapping[]
   rawRows: Record<string, unknown>[]
   dateFormatPreference?: 'auto' | 'DMY' | 'MDY'
+  selectedYear?: number
 }
 
 export async function confirmImportBatchAction(input: ConfirmImportInput) {
@@ -194,7 +195,8 @@ export async function confirmImportBatchAction(input: ConfirmImportInput) {
       input.companyId,
       input.platform,
       input.importType,
-      input.dateFormatPreference || 'auto'
+      input.dateFormatPreference || 'auto',
+      input.selectedYear
     )
 
     if (normalized.status === 'invalid') {
@@ -203,7 +205,7 @@ export async function confirmImportBatchAction(input: ConfirmImportInput) {
       if (normalized.status === 'warning') warningCount++
       validCount++
 
-      if (input.importType === 'account_summary') {
+      if (input.importType === 'account_summary' || input.importType === 'daily_overview' || input.importType === 'audience_growth' || input.importType === 'generic_metrics') {
         const snapDate = normalized.normalizedData.date as string
         if (snapDate) {
           // Push individual numeric metrics into analytics_snapshots

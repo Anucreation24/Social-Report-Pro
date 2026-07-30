@@ -67,7 +67,7 @@ export default function ImportHistoryPage() {
     } catch (err: unknown) {
       console.error('Archive error:', err)
       setError((err as Error).message || 'Failed to archive batch.')
-    } fontally: {
+    } finally {
       setArchivingId(null)
     }
   }
