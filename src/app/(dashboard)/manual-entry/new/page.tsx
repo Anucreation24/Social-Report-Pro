@@ -106,7 +106,11 @@ export default function ManualEntryPage() {
         notes: kpiNotes
       })
 
-      setSuccessMsg(`Successfully saved ${res.count} manual KPI metrics for ${platform.toUpperCase()}!`)
+      if (res && res.success) {
+        setSuccessMsg(`Successfully saved ${res.count ?? 0} manual KPI metrics for ${platform.toUpperCase()}!`)
+      } else if (res && res.error) {
+        setError(res.error)
+      }
     } catch (err: unknown) {
       console.error('KPI save error:', err)
       setError((err as Error).message || 'Failed to save manual KPI entries.')
@@ -165,7 +169,11 @@ export default function ManualEntryPage() {
         items: contentItems
       })
 
-      setSuccessMsg(`Successfully saved ${res.count} manual content performance records for ${platform.toUpperCase()}!`)
+      if (res && res.success) {
+        setSuccessMsg(`Successfully saved ${res.count ?? 0} manual content performance records for ${platform.toUpperCase()}!`)
+      } else if (res && res.error) {
+        setError(res.error)
+      }
     } catch (err: unknown) {
       console.error('Content save error:', err)
       setError((err as Error).message || 'Failed to save manual content records.')
