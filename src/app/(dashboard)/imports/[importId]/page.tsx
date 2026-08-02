@@ -23,13 +23,18 @@ export default function ImportDetailPage({ params }: ImportDetailPageProps) {
 
   useEffect(() => {
     async function loadDetail() {
+      if (!importId) return
       setLoading(true)
       setError(null)
       try {
         const res = await getImportDetailAction(importId)
-        setBatch(res.batch as Record<string, unknown>)
-        setRows(res.rows as Array<Record<string, unknown>>)
-        setSignedUrl(res.signedUrl)
+        if (res && res.batch) {
+          setBatch(res.batch as Record<string, unknown>)
+          setRows(Array.isArray(res.rows) ? (res.rows as Array<Record<string, unknown>>) : [])
+          setSignedUrl(res.signedUrl || '#')
+        } else {
+          setError('Import batch record not found.')
+        }
       } catch (err: unknown) {
         console.error('Import detail load error:', err)
         setError((err as Error).message || 'Failed to load import detail.')
@@ -66,6 +71,16 @@ export default function ImportDetailPage({ params }: ImportDetailPageProps) {
     )
   }
 
+  const batchIdStr = String(batch?.id || '').slice(0, 8)
+  const platformStr = String(batch?.platform || 'unknown')
+  const importTypeStr = String(batch?.import_type || 'account_summary').replace(/_/g, ' ')
+  const fileNameStr = String(batch?.original_file_name || 'Manual Entry')
+  const statusStr = String(batch?.status || 'pending')
+  const importedRowsStr = String(batch?.imported_rows ?? 0)
+  const totalRowsStr = String(batch?.total_rows ?? 0)
+  const dateStr = batch?.created_at ? new Date(String(batch.created_at)).toLocaleString() : 'N/A'
+  const safeRows = Array.isArray(rows) ? rows : []
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between">
@@ -74,9 +89,9 @@ export default function ImportDetailPage({ params }: ImportDetailPageProps) {
             <ArrowLeft className="w-3.5 h-3.5" />
             Back to Import History
           </Link>
-          <h1 className="text-3xl font-extrabold tracking-tight">Import Batch #{String(batch.id).slice(0, 8)}</h1>
+          <h1 className="text-3xl font-extrabold tracking-tight">Import Batch #{batchIdStr}</h1>
           <p className="text-xs text-muted-foreground mt-1">
-            Platform: <span className="capitalize font-bold text-foreground">{String(batch.platform)}</span> | Type: <span className="capitalize font-bold text-foreground">{String(batch.import_type).replace('_', ' ')}</span>
+            Platform: <span className="capitalize font-bold text-foreground">{platformStr}</span> | Type: <span className="capitalize font-bold text-foreground">{importTypeStr}</span>
           </p>
         </div>
 
@@ -96,27 +111,27 @@ export default function ImportDetailPage({ params }: ImportDetailPageProps) {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="p-4 bg-card border border-border/60 rounded-xl space-y-1">
           <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Original File</span>
-          <span className="block font-mono text-xs font-bold text-foreground truncate">{String(batch.original_file_name || 'Manual Entry')}</span>
+          <span className="block font-mono text-xs font-bold text-foreground truncate">{fileNameStr}</span>
         </div>
         <div className="p-4 bg-card border border-border/60 rounded-xl space-y-1">
           <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Status</span>
-          <span className="block font-bold text-emerald-500 capitalize text-xs">{String(batch.status)}</span>
+          <span className="block font-bold text-emerald-500 capitalize text-xs">{statusStr}</span>
         </div>
         <div className="p-4 bg-card border border-border/60 rounded-xl space-y-1">
           <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Imported Rows</span>
-          <span className="block text-base font-extrabold text-foreground">{String(batch.imported_rows)} / {String(batch.total_rows)}</span>
+          <span className="block text-base font-extrabold text-foreground">{importedRowsStr} / {totalRowsStr}</span>
         </div>
         <div className="p-4 bg-card border border-border/60 rounded-xl space-y-1">
           <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Import Date</span>
-          <span className="block text-xs font-semibold text-foreground">{new Date(String(batch.created_at)).toLocaleString()}</span>
+          <span className="block text-xs font-semibold text-foreground">{dateStr}</span>
         </div>
       </div>
 
       {/* Parsed Staging Rows Table */}
       <div className="bg-card border border-border/60 rounded-2xl p-6 space-y-4">
-        <h3 className="text-base font-bold text-foreground">Staged Row Audit Records ({rows.length})</h3>
+        <h3 className="text-base font-bold text-foreground">Staged Row Audit Records ({safeRows.length})</h3>
 
-        {rows.length === 0 ? (
+        {safeRows.length === 0 ? (
           <p className="text-xs text-muted-foreground">No row-level audit logs recorded for this batch.</p>
         ) : (
           <div className="overflow-x-auto max-h-96 border border-border/40 rounded-xl">
@@ -130,19 +145,19 @@ export default function ImportDetailPage({ params }: ImportDetailPageProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/40 font-mono text-[11px]">
-                {rows.map(r => (
-                  <tr key={String(r.id)} className="hover:bg-muted/20">
-                    <td className="p-2.5 font-bold text-foreground">{String(r.row_number)}</td>
+                {safeRows.map((r, idx) => (
+                  <tr key={String(r?.id || `row-${idx}`)} className="hover:bg-muted/20">
+                    <td className="p-2.5 font-bold text-foreground">{String(r?.row_number ?? '-')}</td>
                     <td className="p-2.5">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                        r.validation_status === 'valid' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'
+                        r?.validation_status === 'valid' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'
                       }`}>
-                        {String(r.validation_status)}
+                        {String(r?.validation_status || 'unknown')}
                       </span>
                     </td>
-                    <td className="p-2.5 text-muted-foreground">{String(r.duplicate_key || '-')}</td>
+                    <td className="p-2.5 text-muted-foreground">{String(r?.duplicate_key || '-')}</td>
                     <td className="p-2.5 text-foreground max-w-md truncate">
-                      {JSON.stringify(r.normalized_data)}
+                      {JSON.stringify(r?.normalized_data || {})}
                     </td>
                   </tr>
                 ))}

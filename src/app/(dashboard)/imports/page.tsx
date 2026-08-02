@@ -39,15 +39,16 @@ export default function ImportHistoryPage() {
   const [archivingId, setArchivingId] = useState<string | null>(null)
 
   const fetchHistory = useCallback(async () => {
-    if (!activeCompany) return
+    if (!activeCompany?.id) return
     setLoading(true)
     setError(null)
     try {
       const data = await getImportHistoryAction(activeCompany.id, platformFilter)
-      setBatches(data as unknown as ImportBatchRow[])
+      setBatches(Array.isArray(data) ? (data as unknown as ImportBatchRow[]) : [])
     } catch (err: unknown) {
       console.error('Failed to fetch import history:', err)
       setError((err as Error).message || 'Failed to load import history.')
+      setBatches([])
     } finally {
       setLoading(false)
     }
@@ -59,11 +60,16 @@ export default function ImportHistoryPage() {
   }, [fetchHistory])
 
   const handleArchive = async (batchId: string) => {
+    if (!batchId) return
     if (!confirm('Are you sure you want to archive this import batch?')) return
     setArchivingId(batchId)
     try {
-      await archiveImportBatchAction(batchId)
-      fetchHistory()
+      const res = await archiveImportBatchAction(batchId)
+      if (res && res.success) {
+        fetchHistory()
+      } else if (res && res.error) {
+        setError(res.error)
+      }
     } catch (err: unknown) {
       console.error('Archive error:', err)
       setError((err as Error).message || 'Failed to archive batch.')
@@ -72,7 +78,19 @@ export default function ImportHistoryPage() {
     }
   }
 
-  if (!activeCompany) return null
+  if (!activeCompany) {
+    return (
+      <div className="space-y-6 py-12 text-center">
+        <div className="p-8 bg-card border border-border/60 rounded-2xl space-y-4">
+          <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto" />
+          <h3 className="text-base font-bold text-foreground">Loading Workspace Context...</h3>
+          <p className="text-xs text-muted-foreground">Preparing Import History for your active company.</p>
+        </div>
+      </div>
+    )
+  }
+
+  const safeBatches = Array.isArray(batches) ? batches : []
 
   return (
     <div className="space-y-6">
@@ -80,7 +98,7 @@ export default function ImportHistoryPage() {
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight">Data Import History</h1>
           <p className="text-xs text-muted-foreground mt-1">
-            Audit logs of CSV/Excel file imports and manual KPI entries for {activeCompany.name}.
+            Audit logs of CSV/Excel file imports and manual KPI entries for {activeCompany?.name || 'Workspace'}.
           </p>
         </div>
 
@@ -136,7 +154,7 @@ export default function ImportHistoryPage() {
         <div className="flex justify-center items-center py-24">
           <Loader2 className="w-8 h-8 text-primary animate-spin" />
         </div>
-      ) : batches.length === 0 ? (
+      ) : safeBatches.length === 0 ? (
         <div className="bg-card border border-border/60 rounded-2xl p-12 text-center space-y-3">
           <FileSpreadsheet className="w-10 h-10 text-muted-foreground mx-auto" />
           <h3 className="text-base font-bold text-foreground">No Import Batches Recorded</h3>
@@ -166,58 +184,70 @@ export default function ImportHistoryPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/40 font-medium">
-                {batches.map(b => (
-                  <tr key={b.id} className="hover:bg-muted/20 transition-colors">
-                    <td className="p-3.5 capitalize font-bold text-foreground">{b.platform}</td>
-                    <td className="p-3.5">
-                      <span className="capitalize font-semibold text-foreground">{b.source_type.replace('_', ' ')}</span>
-                      <span className="block text-[10px] text-muted-foreground">{b.import_type.replace('_', ' ')}</span>
-                    </td>
-                    <td className="p-3.5">
-                      <span className="font-mono text-xs text-foreground">{b.original_file_name || 'Manual Entry'}</span>
-                      {b.file_size_bytes && (
-                        <span className="block text-[10px] text-muted-foreground">{(b.file_size_bytes / 1024).toFixed(1)} KB</span>
-                      )}
-                    </td>
-                    <td className="p-3.5 text-muted-foreground">
-                      {new Date(b.created_at).toLocaleDateString()}
-                    </td>
-                    <td className="p-3.5">
-                      {b.status === 'completed' ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-                          <CheckCircle2 className="w-3 h-3" /> Completed
-                        </span>
-                      ) : b.status === 'partially_completed' ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-500 border border-amber-500/20 px-2 py-0.5 rounded-full">
-                          Partial
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-rose-500/10 text-rose-500 border border-rose-500/20 px-2 py-0.5 rounded-full">
-                          Failed
-                        </span>
-                      )}
-                    </td>
-                    <td className="p-3.5">
-                      <span className="font-bold text-foreground">{b.imported_rows}</span> / {b.total_rows}
-                    </td>
-                    <td className="p-3.5 text-right space-x-2">
-                      <Link
-                        href={`/imports/${b.id}`}
-                        className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-lg bg-secondary hover:bg-secondary/80 text-secondary-foreground border border-border/60 transition-colors"
-                      >
-                        <Eye className="w-3.5 h-3.5" /> Inspect
-                      </Link>
-                      <button
-                        onClick={() => handleArchive(b.id)}
-                        disabled={archivingId === b.id}
-                        className="p-1 text-destructive hover:bg-destructive/10 rounded-lg transition-colors cursor-pointer"
-                        title="Archive batch"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {safeBatches.map((b, idx) => {
+                  const platformStr = String(b?.platform || 'unknown')
+                  const sourceTypeStr = String(b?.source_type || 'csv_import').replace(/_/g, ' ')
+                  const importTypeStr = String(b?.import_type || 'account_summary').replace(/_/g, ' ')
+                  const fileNameStr = b?.original_file_name || 'Manual Entry'
+                  const dateStr = b?.created_at ? new Date(b.created_at).toLocaleDateString() : 'N/A'
+
+                  return (
+                    <tr key={b?.id || `batch-${idx}`} className="hover:bg-muted/20 transition-colors">
+                      <td className="p-3.5 capitalize font-bold text-foreground">{platformStr}</td>
+                      <td className="p-3.5">
+                        <span className="capitalize font-semibold text-foreground">{sourceTypeStr}</span>
+                        <span className="block text-[10px] text-muted-foreground">{importTypeStr}</span>
+                      </td>
+                      <td className="p-3.5">
+                        <span className="font-mono text-xs text-foreground">{fileNameStr}</span>
+                        {typeof b?.file_size_bytes === 'number' && (
+                          <span className="block text-[10px] text-muted-foreground">{(b.file_size_bytes / 1024).toFixed(1)} KB</span>
+                        )}
+                      </td>
+                      <td className="p-3.5 text-muted-foreground">
+                        {dateStr}
+                      </td>
+                      <td className="p-3.5">
+                        {b?.status === 'completed' ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                            <CheckCircle2 className="w-3 h-3" /> Completed
+                          </span>
+                        ) : b?.status === 'partially_completed' ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-500 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                            Partial
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-rose-500/10 text-rose-500 border border-rose-500/20 px-2 py-0.5 rounded-full">
+                            Failed
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-3.5">
+                        <span className="font-bold text-foreground">{b?.imported_rows ?? 0}</span> / {b?.total_rows ?? 0}
+                      </td>
+                      <td className="p-3.5 text-right space-x-2">
+                        {b?.id && (
+                          <Link
+                            href={`/imports/${b.id}`}
+                            className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-lg bg-secondary hover:bg-secondary/80 text-secondary-foreground border border-border/60 transition-colors"
+                          >
+                            <Eye className="w-3.5 h-3.5" /> Inspect
+                          </Link>
+                        )}
+                        {b?.id && (
+                          <button
+                            onClick={() => handleArchive(b.id)}
+                            disabled={archivingId === b.id}
+                            className="p-1 text-destructive hover:bg-destructive/10 rounded-lg transition-colors cursor-pointer"
+                            title="Archive batch"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

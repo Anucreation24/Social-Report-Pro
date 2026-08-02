@@ -230,7 +230,17 @@ export default function UniversalImportPage() {
     }
   }, [mappings])
 
-  if (!activeCompany) return null
+  if (!activeCompany) {
+    return (
+      <div className="space-y-6 max-w-5xl mx-auto py-12 text-center">
+        <div className="p-8 bg-card border border-border/60 rounded-2xl space-y-4">
+          <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto" />
+          <h3 className="text-base font-bold text-foreground">Loading Workspace Context...</h3>
+          <p className="text-xs text-muted-foreground">Preparing Universal Import Wizard for your active company.</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
