@@ -167,4 +167,5 @@ export interface GeneratedReportSnapshot {
     recommendationsNotes?: string
     platformNotes?: Record<string, string>
   }
+  aiIntelligence?: Record<string, unknown>
 }

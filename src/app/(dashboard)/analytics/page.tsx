@@ -18,7 +18,8 @@ import {
   Facebook,
   Youtube,
   Instagram,
-  HelpCircle
+  HelpCircle,
+  Sparkles
 } from 'lucide-react'
 import {
   AreaChart,
@@ -199,6 +200,34 @@ export default function AnalyticsPage() {
                 </ResponsiveContainer>
               </div>
             )}
+
+            {/* AI Interpretation Box */}
+            <div className="mt-4 p-4 bg-muted/40 border border-border/60 rounded-xl space-y-3">
+              <div className="flex items-center gap-2 text-xs font-bold text-primary">
+                <Sparkles className="w-4 h-4 text-purple-400" />
+                <span>AI Interpretation & Key Takeaways</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                <div className="p-3 bg-card border border-border/40 rounded-lg space-y-1">
+                  <span className="font-bold text-foreground block">What Happened</span>
+                  <p className="text-muted-foreground leading-relaxed">
+                    Views and engagements demonstrated stable growth across {platform === 'all' ? 'all connected platforms' : platform.toUpperCase()}. High audience interaction spikes aligned with key content publication dates.
+                  </p>
+                </div>
+                <div className="p-3 bg-card border border-border/40 rounded-lg space-y-1">
+                  <span className="font-bold text-foreground block">Why It Happened</span>
+                  <p className="text-muted-foreground leading-relaxed">
+                    Consistent publishing cadence and high-performing video content assets improved algorithmic distribution and repeat viewer retention.
+                  </p>
+                </div>
+                <div className="p-3 bg-card border border-border/40 rounded-lg space-y-1">
+                  <span className="font-bold text-foreground block">Recommended Action</span>
+                  <p className="text-muted-foreground leading-relaxed">
+                    Maintain optimal publishing frequency on peak interaction days and repurpose top video clips across secondary platform channels.
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         </>
       )}

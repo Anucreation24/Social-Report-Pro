@@ -23,10 +23,12 @@ import {
   User,
   Sun,
   Moon,
+  Sparkles
 } from 'lucide-react'
 
 const NAVIGATION = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { name: 'AI Intelligence', href: '/ai-intelligence', icon: Sparkles },
   { name: 'Connections', href: '/connections', icon: Link2 },
   { name: 'Analytics', href: '/analytics', icon: BarChart3 },
   { name: 'Content Performance', href: '/content-performance', icon: FileSpreadsheet },

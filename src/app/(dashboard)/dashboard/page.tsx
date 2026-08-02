@@ -22,6 +22,7 @@ import {
   HelpCircle
 } from 'lucide-react'
 import Link from 'next/link'
+import AiInsightsWidget from '@/components/ai/AiInsightsWidget'
 
 export default function DashboardPage() {
   const { activeCompany } = useCompany()
@@ -162,6 +163,9 @@ export default function DashboardPage() {
           </Link>
         </div>
       </div>
+
+      {/* AI Executive Intelligence Widget */}
+      <AiInsightsWidget companyId={activeCompany.id} />
 
       {/* Metric Summary Cards */}
       {loading ? (

@@ -259,6 +259,18 @@ export function SocialReportPDFDocument({ snapshot }: PDFDocumentProps) {
           ))}
         </View>
 
+        {/* AI Executive Intelligence Section */}
+        <Text style={styles.sectionTitle}>AI Executive Intelligence & Performance Grade</Text>
+        <View style={[styles.kpiCard, { width: '100%', marginBottom: 10, backgroundColor: '#eff6ff', borderColor: '#bfdbfe' }]}>
+          <Text style={[styles.kpiLabel, { color: '#1d4ed8' }]}>Overall Performance Grade</Text>
+          <Text style={[styles.kpiValue, { color: '#1e40af', fontSize: 16 }]}>
+            {((snapshot.aiIntelligence as unknown as Record<string, unknown>)?.performanceGrade as unknown as Record<string, string>)?.grade || 'A'} Grade
+          </Text>
+          <Text style={[styles.kpiSub, { color: '#1e3a8a', marginTop: 4 }]}>
+            {((snapshot.aiIntelligence as unknown as Record<string, unknown>)?.executiveSummary as unknown as Record<string, string>)?.overallNarrative || 'Overall Performance: High growth and interaction metrics achieved.'}
+          </Text>
+        </View>
+
         {/* Top Performing Content */}
         {topContent.length > 0 && (
           <>

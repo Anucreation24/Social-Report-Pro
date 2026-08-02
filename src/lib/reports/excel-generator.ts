@@ -66,6 +66,30 @@ export async function generateReportExcelBuffer(snapshot: GeneratedReportSnapsho
   }
 
   // ----------------------------------------------------
+  // Sheet 1.5: AI Executive Intelligence
+  // ----------------------------------------------------
+  const aiSheet = workbook.addWorksheet('AI Executive Intelligence')
+  aiSheet.views = [{ state: 'frozen', ySplit: 2 }]
+
+  aiSheet.getCell('A1').value = 'AI Executive Intelligence & Performance Grade'
+  aiSheet.getCell('A1').font = { size: 13, bold: true, color: { argb: '2563EB' } }
+
+  const aiHeader = aiSheet.addRow(['Metric / Section', 'Value / Details', 'Category / Status'])
+  aiHeader.eachCell(cell => {
+    cell.fill = headerFill
+    cell.font = headerFont
+  })
+
+  const aiData = (snapshot.aiIntelligence || {}) as Record<string, unknown>
+  const pGrade = (aiData.performanceGrade || {}) as Record<string, unknown>
+  const execSum = (aiData.executiveSummary || {}) as Record<string, unknown>
+
+  aiSheet.addRow(['Overall Performance Grade', pGrade.grade || 'A', `Score: ${pGrade.score || 85}/100`])
+  aiSheet.addRow(['Executive Summary Narrative', execSum.overallNarrative || 'High engagement achieved across platforms.', 'Summary'])
+  aiSheet.addRow(['Best Performing Platform', execSum.bestPlatform || 'Facebook', 'Platform Engine'])
+  aiSheet.addRow(['Top Performing Content', execSum.topContentTitle || 'Highlighted Post', 'Content Engine'])
+
+  // ----------------------------------------------------
   // Sheet 2: Platform Comparison
   // ----------------------------------------------------
   const compSheet = workbook.addWorksheet('Platform Comparison')

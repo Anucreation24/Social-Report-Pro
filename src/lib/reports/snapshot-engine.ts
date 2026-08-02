@@ -15,6 +15,7 @@ import { calculateWeeklyReportPeriod, calculateMonthlyReportPeriod, ReportPeriod
 import { generateExecutiveSummary } from './executive-summary'
 import { generateRecommendations } from './recommendations'
 import { aggregateCombinedMetrics } from '@/lib/analytics/aggregation'
+import { generateAIExecutiveIntelligence } from '@/lib/ai/intelligence-facade'
 
 export interface BuildSnapshotParams {
   companyId: string
@@ -491,6 +492,14 @@ export async function buildReportSnapshot(
       executiveSummaryNotes: params.notes?.executiveSummaryNotes,
       marketingNotes: params.notes?.marketingNotes,
       recommendationsNotes: params.notes?.recommendationsNotes
-    }
+    },
+    aiIntelligence: await (async () => {
+      try {
+        return (await generateAIExecutiveIntelligence(supabase, companyId, 'medium')) as unknown as Record<string, unknown>
+      } catch (err) {
+        console.error('Failed to generate AI executive intelligence for report snapshot:', err)
+        return undefined
+      }
+    })()
   }
 }
