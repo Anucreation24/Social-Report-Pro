@@ -50,7 +50,7 @@ export class FacebookConnector implements SocialPlatformConnector {
     const state = generateOAuthState(input.userId, input.companyId, 'facebook', input.returnUrl)
     
     // Scopes needed for read-only Page metadata & analytics
-    const scopes = ['public_profile', 'email', 'pages_show_list', 'pages_read_engagement', 'pages_read_user_content']
+    const scopes = ['public_profile', 'email', 'pages_show_list', 'pages_read_engagement', 'pages_read_user_content', 'read_insights']
     
     const url = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${clientId}&redirect_uri=${encodeURIComponent(
       redirectUri
@@ -96,7 +96,7 @@ export class FacebookConnector implements SocialPlatformConnector {
     return {
       accessToken: longData.access_token,
       expiresIn: longData.expires_in || 5184000, // Default 60 days
-      scopes: ['pages_show_list', 'pages_read_engagement', 'pages_read_user_content']
+      scopes: ['pages_show_list', 'pages_read_engagement', 'pages_read_user_content', 'read_insights']
     }
   }
 
