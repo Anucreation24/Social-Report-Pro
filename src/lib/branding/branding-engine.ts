@@ -1,4 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js'
+import { siteConfig } from '@/lib/site-config'
 
 export interface ResolvedBranding {
   agencyName: string
@@ -22,7 +23,7 @@ export const SYSTEM_FALLBACK_BRANDING: ResolvedBranding = {
   secondaryColor: '#06B6D4',
   accentColor: '#10B981',
   footerText: 'Powered by Social Report Pro Analytics Engine',
-  supportEmail: 'support@socialreportpro.com',
+  supportEmail: siteConfig.supportEmail,
   websiteUrl: 'https://social-report-pro.vercel.app',
   portalWelcomeMessage: 'Welcome to your Social Report Pro Client Analytics Portal.',
   source: 'default'
