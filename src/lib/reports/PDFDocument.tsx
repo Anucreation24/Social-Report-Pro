@@ -1,8 +1,9 @@
 import React from 'react'
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer'
 import { GeneratedReportSnapshot } from './types'
+import { SupportedLanguageCode, PdfMode } from '@/lib/i18n/languages'
+import { getDictionary } from '@/lib/i18n/translator'
 
-// Register standard fonts
 const styles = StyleSheet.create({
   page: {
     padding: 36,
@@ -128,22 +129,6 @@ const styles = StyleSheet.create({
     flex: 1,
     lineHeight: 1.3
   },
-  badgeHigh: {
-    fontSize: 7,
-    fontFamily: 'Helvetica-Bold',
-    color: '#ef4444',
-    backgroundColor: '#fef2f2',
-    padding: '1 4',
-    borderRadius: 2
-  },
-  badgeMed: {
-    fontSize: 7,
-    fontFamily: 'Helvetica-Bold',
-    color: '#f59e0b',
-    backgroundColor: '#fffbe finished',
-    padding: '1 4',
-    borderRadius: 2
-  },
   footer: {
     position: 'absolute',
     bottom: 24,
@@ -153,18 +138,27 @@ const styles = StyleSheet.create({
     borderTopColor: '#cbd5e1',
     paddingTop: 6,
     flexDirection: 'row',
-    justify: 'space-between',
+    justifyContent: 'space-between',
     fontSize: 7.5,
     color: '#94a3b8'
   }
 })
 
-interface PDFDocumentProps {
+export interface PDFDocumentProps {
   snapshot: GeneratedReportSnapshot
+  language?: SupportedLanguageCode
+  pdfMode?: PdfMode
 }
 
-export function SocialReportPDFDocument({ snapshot }: PDFDocumentProps) {
+export function SocialReportPDFDocument({ snapshot, language = 'en', pdfMode = 'single' }: PDFDocumentProps) {
   const { company, report, overall, platforms, topContent, executiveSummary, recommendations, dataAvailability } = snapshot
+  const dict = getDictionary(language)
+  const isBilingual = pdfMode === 'bilingual'
+
+  const sectionLabel = (enLabel: string, locLabel: string) => {
+    if (isBilingual) return `${enLabel} / ${locLabel}`
+    return language === 'si' ? locLabel : enLabel
+  }
 
   return (
     <Document title={`${company.name} - ${report.title}`}>
@@ -179,17 +173,17 @@ export function SocialReportPDFDocument({ snapshot }: PDFDocumentProps) {
             </Text>
           </View>
           <View style={{ alignItems: 'flex-end' }}>
-            <Text style={styles.metaText}>Prepared By: {report.preparedBy}</Text>
-            <Text style={styles.metaText}>Generated Date: {new Date(report.generatedAt).toLocaleDateString()}</Text>
+            <Text style={styles.metaText}>{dict.preparedBy}: {report.preparedBy}</Text>
+            <Text style={styles.metaText}>{dict.generatedAt}: {new Date(report.generatedAt).toLocaleDateString()}</Text>
             <Text style={styles.metaText}>Timezone: {company.timezone}</Text>
           </View>
         </View>
 
         {/* Overall KPI Summary Cards */}
-        <Text style={styles.sectionTitle}>Overall Performance Summary</Text>
+        <Text style={styles.sectionTitle}>{sectionLabel('Overall Performance Summary', dict.overallPerformance)}</Text>
         <View style={styles.kpiGrid}>
           <View style={styles.kpiCard}>
-            <Text style={styles.kpiLabel}>Total Audience</Text>
+            <Text style={styles.kpiLabel}>{sectionLabel('Total Audience', dict.metrics.audienceTotal)}</Text>
             <Text style={styles.kpiValue}>{overall.audienceTotal.currentValue.toLocaleString()}</Text>
             <Text style={styles.kpiSub}>
               {overall.audienceTotal.isUnavailable ? 'No baseline' : `${overall.audienceTotal.percentageChange}% vs prev`}
@@ -197,7 +191,7 @@ export function SocialReportPDFDocument({ snapshot }: PDFDocumentProps) {
           </View>
 
           <View style={styles.kpiCard}>
-            <Text style={styles.kpiLabel}>Total Views</Text>
+            <Text style={styles.kpiLabel}>{sectionLabel('Total Views', dict.metrics.views)}</Text>
             <Text style={styles.kpiValue}>{overall.views.currentValue.toLocaleString()}</Text>
             <Text style={styles.kpiSub}>
               {overall.views.isUnavailable ? 'No baseline' : `${overall.views.percentageChange}% vs prev`}
@@ -205,7 +199,7 @@ export function SocialReportPDFDocument({ snapshot }: PDFDocumentProps) {
           </View>
 
           <View style={styles.kpiCard}>
-            <Text style={styles.kpiLabel}>Engagements</Text>
+            <Text style={styles.kpiLabel}>{sectionLabel('Engagements', dict.metrics.engagements)}</Text>
             <Text style={styles.kpiValue}>{overall.engagements.currentValue.toLocaleString()}</Text>
             <Text style={styles.kpiSub}>
               {overall.engagements.isUnavailable ? 'No baseline' : `${overall.engagements.percentageChange}% vs prev`}
@@ -213,7 +207,7 @@ export function SocialReportPDFDocument({ snapshot }: PDFDocumentProps) {
           </View>
 
           <View style={styles.kpiCard}>
-            <Text style={styles.kpiLabel}>Total Impressions</Text>
+            <Text style={styles.kpiLabel}>{sectionLabel('Total Impressions', dict.metrics.impressions)}</Text>
             <Text style={styles.kpiValue}>{overall.impressions.currentValue.toLocaleString()}</Text>
             {overall.impressions.isUnavailable ? (
               <Text style={styles.kpiWarning}>Meta permissions notice</Text>
@@ -224,7 +218,7 @@ export function SocialReportPDFDocument({ snapshot }: PDFDocumentProps) {
         </View>
 
         {/* Executive Summary */}
-        <Text style={styles.sectionTitle}>Executive Summary</Text>
+        <Text style={styles.sectionTitle}>{sectionLabel('Executive Summary', dict.executiveSummary)}</Text>
         <View style={styles.bulletList}>
           {executiveSummary.map(item => (
             <View key={item.id} style={styles.bulletItem}>
@@ -235,21 +229,21 @@ export function SocialReportPDFDocument({ snapshot }: PDFDocumentProps) {
         </View>
 
         {/* Platform Comparison Table */}
-        <Text style={styles.sectionTitle}>Platform Overview & Comparison</Text>
+        <Text style={styles.sectionTitle}>{sectionLabel('Platform Overview & Comparison', dict.platformComparison)}</Text>
         <View style={styles.table}>
           <View style={[styles.tableRow, styles.tableHeader]}>
             <Text style={[styles.col, { fontFamily: 'Helvetica-Bold' }]}>Platform</Text>
             <Text style={[styles.col, { fontFamily: 'Helvetica-Bold' }]}>Status</Text>
-            <Text style={[styles.col, { fontFamily: 'Helvetica-Bold' }]}>Audience</Text>
-            <Text style={[styles.col, { fontFamily: 'Helvetica-Bold' }]}>Views</Text>
-            <Text style={[styles.col, { fontFamily: 'Helvetica-Bold' }]}>Engagements</Text>
-            <Text style={[styles.col, { fontFamily: 'Helvetica-Bold' }]}>Published</Text>
+            <Text style={[styles.col, { fontFamily: 'Helvetica-Bold' }]}>{dict.metrics.audienceTotal}</Text>
+            <Text style={[styles.col, { fontFamily: 'Helvetica-Bold' }]}>{dict.metrics.views}</Text>
+            <Text style={[styles.col, { fontFamily: 'Helvetica-Bold' }]}>{dict.metrics.engagements}</Text>
+            <Text style={[styles.col, { fontFamily: 'Helvetica-Bold' }]}>{dict.metrics.contentPublished}</Text>
           </View>
           {Object.entries(platforms).map(([pKey, pData]) => (
             <View key={pKey} style={styles.tableRow}>
               <Text style={[styles.col, { textTransform: 'capitalize', fontFamily: 'Helvetica-Bold' }]}>{pKey}</Text>
               <Text style={styles.col}>
-                {pData?.isConnected ? (pData.metrics.impressions.isUnavailable ? 'Permission Notice' : 'Connected') : 'Not Connected'}
+                {pData?.isConnected ? (pData.metrics.impressions.isUnavailable ? dict.status.permissionLimited : dict.status.connected) : dict.status.notConnected}
               </Text>
               <Text style={styles.col}>{pData?.metrics.audienceTotal.currentValue.toLocaleString() || '0'}</Text>
               <Text style={styles.col}>{pData?.metrics.views.currentValue.toLocaleString() || '0'}</Text>
@@ -259,30 +253,18 @@ export function SocialReportPDFDocument({ snapshot }: PDFDocumentProps) {
           ))}
         </View>
 
-        {/* AI Executive Intelligence Section */}
-        <Text style={styles.sectionTitle}>AI Executive Intelligence & Performance Grade</Text>
-        <View style={[styles.kpiCard, { width: '100%', marginBottom: 10, backgroundColor: '#eff6ff', borderColor: '#bfdbfe' }]}>
-          <Text style={[styles.kpiLabel, { color: '#1d4ed8' }]}>Overall Performance Grade</Text>
-          <Text style={[styles.kpiValue, { color: '#1e40af', fontSize: 16 }]}>
-            {((snapshot.aiIntelligence as unknown as Record<string, unknown>)?.performanceGrade as unknown as Record<string, string>)?.grade || 'A'} Grade
-          </Text>
-          <Text style={[styles.kpiSub, { color: '#1e3a8a', marginTop: 4 }]}>
-            {((snapshot.aiIntelligence as unknown as Record<string, unknown>)?.executiveSummary as unknown as Record<string, string>)?.overallNarrative || 'Overall Performance: High growth and interaction metrics achieved.'}
-          </Text>
-        </View>
-
         {/* Top Performing Content */}
         {topContent.length > 0 && (
           <>
-            <Text style={styles.sectionTitle}>Top Performing Content</Text>
+            <Text style={styles.sectionTitle}>{sectionLabel('Top Performing Content', dict.topContent)}</Text>
             <View style={styles.table}>
               <View style={[styles.tableRow, styles.tableHeader]}>
                 <Text style={[styles.colWide, { fontFamily: 'Helvetica-Bold' }]}>Title / Excerpt</Text>
                 <Text style={[styles.colSm, { fontFamily: 'Helvetica-Bold' }]}>Platform</Text>
-                <Text style={[styles.colSm, { fontFamily: 'Helvetica-Bold' }]}>Views</Text>
-                <Text style={[styles.colSm, { fontFamily: 'Helvetica-Bold' }]}>Likes</Text>
-                <Text style={[styles.colSm, { fontFamily: 'Helvetica-Bold' }]}>Comments</Text>
-                <Text style={[styles.colSm, { fontFamily: 'Helvetica-Bold' }]}>Total Eng.</Text>
+                <Text style={[styles.colSm, { fontFamily: 'Helvetica-Bold' }]}>{dict.metrics.views}</Text>
+                <Text style={[styles.colSm, { fontFamily: 'Helvetica-Bold' }]}>{dict.metrics.likes}</Text>
+                <Text style={[styles.colSm, { fontFamily: 'Helvetica-Bold' }]}>{dict.metrics.comments}</Text>
+                <Text style={[styles.colSm, { fontFamily: 'Helvetica-Bold' }]}>{dict.metrics.engagements}</Text>
               </View>
               {topContent.slice(0, 5).map(item => (
                 <View key={item.providerContentId} style={styles.tableRow}>
@@ -299,7 +281,7 @@ export function SocialReportPDFDocument({ snapshot }: PDFDocumentProps) {
         )}
 
         {/* Recommendations */}
-        <Text style={styles.sectionTitle}>Strategic Recommendations</Text>
+        <Text style={styles.sectionTitle}>{sectionLabel('Strategic Recommendations', dict.recommendations)}</Text>
         <View style={styles.bulletList}>
           {recommendations.map(rec => (
             <View key={rec.id} style={styles.bulletItem}>
@@ -315,7 +297,7 @@ export function SocialReportPDFDocument({ snapshot }: PDFDocumentProps) {
         </View>
 
         {/* Data Availability Notes */}
-        <Text style={styles.sectionTitle}>Data Availability & Disclaimers</Text>
+        <Text style={styles.sectionTitle}>{sectionLabel('Data Availability & Disclaimers', dict.dataAvailability)}</Text>
         <View style={styles.bulletList}>
           {dataAvailability.map(item => (
             <View key={item.key} style={styles.bulletItem}>

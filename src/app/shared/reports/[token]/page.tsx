@@ -2,10 +2,10 @@
 
 import React, { useEffect, useState, useCallback, use } from 'react'
 import { getPublicShareReportAction } from '@/features/share-links/actions'
-import { 
-  Download, Lock, AlertCircle, Loader2, Calendar, 
-  CheckCircle2
-} from 'lucide-react'
+import { Download, Lock, AlertCircle, Loader2, Calendar, CheckCircle2 } from 'lucide-react'
+import { SupportedLanguageCode, PdfMode } from '@/lib/i18n/languages'
+import { getDictionary, translateStatementText } from '@/lib/i18n/translator'
+import { LanguageSelector } from '@/components/reports/LanguageSelector'
 
 interface PublicReportSharePageProps {
   params: Promise<{ token: string }>
@@ -19,6 +19,8 @@ export default function PublicReportSharePage({ params }: PublicReportSharePageP
   const [error, setError] = useState<string | null>(null)
   const [requiresPassword, setRequiresPassword] = useState(false)
   const [passwordInput, setPasswordInput] = useState('')
+  const [lang, setLang] = useState<SupportedLanguageCode>('en')
+  const [pdfMode, setPdfMode] = useState<PdfMode>('single')
   const [reportData, setReportData] = useState<{
     companyName: string
     companyLogoUrl: string | null
@@ -180,22 +182,30 @@ export default function PublicReportSharePage({ params }: PublicReportSharePageP
           </p>
         </div>
 
+        {/* Language Selection */}
+        <LanguageSelector
+          selectedLanguage={lang}
+          onChangeLanguage={setLang}
+          pdfMode={pdfMode}
+          onChangePdfMode={setPdfMode}
+        />
+
         {/* Key Metrics */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="p-4 bg-card border border-border/60 rounded-xl space-y-1">
-            <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Total Followers</span>
+            <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">{getDictionary(lang).metrics.audienceTotal}</span>
             <span className="block text-2xl font-extrabold text-foreground">{Number(overall.audienceTotal?.currentValue || 0).toLocaleString()}</span>
           </div>
           <div className="p-4 bg-card border border-border/60 rounded-xl space-y-1">
-            <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Total Views</span>
+            <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">{getDictionary(lang).metrics.views}</span>
             <span className="block text-2xl font-extrabold text-foreground">{Number(overall.views?.currentValue || 0).toLocaleString()}</span>
           </div>
           <div className="p-4 bg-card border border-border/60 rounded-xl space-y-1">
-            <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Total Engagements</span>
+            <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">{getDictionary(lang).metrics.engagements}</span>
             <span className="block text-2xl font-extrabold text-foreground">{Number(overall.engagements?.currentValue || 0).toLocaleString()}</span>
           </div>
           <div className="p-4 bg-card border border-border/60 rounded-xl space-y-1">
-            <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Total Reach</span>
+            <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">{getDictionary(lang).metrics.reach}</span>
             <span className="block text-2xl font-extrabold text-foreground">{Number(overall.reach?.currentValue || 0).toLocaleString()}</span>
           </div>
         </div>
@@ -203,9 +213,9 @@ export default function PublicReportSharePage({ params }: PublicReportSharePageP
         {/* Executive Summary */}
         {Boolean(reportData.snapshot?.executiveSummary) && (
           <div className="bg-card border border-border/60 rounded-2xl p-6 space-y-3 shadow-sm">
-            <h3 className="text-base font-bold text-foreground">Executive Summary</h3>
+            <h3 className="text-base font-bold text-foreground">{getDictionary(lang).executiveSummary}</h3>
             <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-line">
-              {String(reportData.snapshot.executiveSummary)}
+              {translateStatementText(String(reportData.snapshot.executiveSummary), lang)}
             </p>
           </div>
         )}

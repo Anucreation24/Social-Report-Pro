@@ -11,6 +11,9 @@ import {
   ArrowLeft, FileText, FileSpreadsheet, RefreshCw, Archive, Loader2,
   CheckCircle2, AlertCircle
 } from 'lucide-react'
+import { SupportedLanguageCode, PdfMode } from '@/lib/i18n/languages'
+import { translateReportSnapshot } from '@/lib/i18n/translator'
+import { LanguageSelector } from '@/components/reports/LanguageSelector'
 
 interface ReportDetailPageProps {
   params: Promise<{ reportId: string }>
@@ -27,6 +30,8 @@ export default function ReportDetailPage({ params }: ReportDetailPageProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
+  const [viewLanguage, setViewLanguage] = useState<SupportedLanguageCode>('en')
+  const [pdfMode, setPdfMode] = useState<PdfMode>('single')
 
   useEffect(() => {
     async function loadReportDetails() {
@@ -201,8 +206,16 @@ export default function ReportDetailPage({ params }: ReportDetailPageProps) {
         )}
       </div>
 
+      {/* Instant Language Translation Switcher */}
+      <LanguageSelector
+        selectedLanguage={viewLanguage}
+        onChangeLanguage={setViewLanguage}
+        pdfMode={pdfMode}
+        onChangePdfMode={setPdfMode}
+      />
+
       {/* Report Document Preview */}
-      <ReportPreview snapshot={snapshot} />
+      <ReportPreview snapshot={translateReportSnapshot(snapshot, viewLanguage, pdfMode)} />
     </div>
   )
 }

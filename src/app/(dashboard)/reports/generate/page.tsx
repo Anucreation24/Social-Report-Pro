@@ -4,9 +4,11 @@ import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useCompany } from '@/components/providers/CompanyProvider'
 import { ReportType, PlatformType, GeneratedReportSnapshot } from '@/lib/reports/types'
-import { buildReportSnapshot } from '@/lib/reports/snapshot-engine'
 import { generateReportAction } from '@/features/reports/actions'
 import { ReportPreview } from '@/components/reports/ReportPreview'
+import { SupportedLanguageCode, PdfMode } from '@/lib/i18n/languages'
+import { translateReportSnapshot } from '@/lib/i18n/translator'
+import { LanguageSelector } from '@/components/reports/LanguageSelector'
 import {
   Calendar, Check, CheckCircle2, ChevronRight, FileSpreadsheet, FileText,
   Filter, Layers, Loader2, Sparkles, User, AlertCircle, ArrowLeft, Download
@@ -35,6 +37,8 @@ export default function ReportGeneratePage() {
   const [execSummaryNotes, setExecSummaryNotes] = useState<string>('')
   const [marketingNotes, setMarketingNotes] = useState<string>('')
   const [recommendationsNotes, setRecommendationsNotes] = useState<string>('')
+  const [language, setLanguage] = useState<SupportedLanguageCode>('en')
+  const [pdfMode, setPdfMode] = useState<PdfMode>('single')
 
   // Preview & Generation state
   const [previewSnapshot, setPreviewSnapshot] = useState<GeneratedReportSnapshot | null>(null)
@@ -96,7 +100,9 @@ export default function ReportGeneratePage() {
         preparedBy,
         executiveSummaryNotes: execSummaryNotes,
         marketingNotes,
-        recommendationsNotes
+        recommendationsNotes,
+        language,
+        pdfMode
       })
 
       if (res.success) {
@@ -166,10 +172,17 @@ export default function ReportGeneratePage() {
         </div>
       )}
 
-      {/* Step 1: Report Type */}
+      {/* Step 1: Report Type & Language */}
       {step === 1 && (
         <div className="bg-card border border-border/80 rounded-2xl p-6 space-y-6 shadow-sm">
-          <h3 className="text-lg font-bold text-foreground">Step 1: Select Report Type</h3>
+          <h3 className="text-lg font-bold text-foreground">Step 1: Select Report Language & Type</h3>
+
+          <LanguageSelector
+            selectedLanguage={language}
+            onChangeLanguage={setLanguage}
+            pdfMode={pdfMode}
+            onChangePdfMode={setPdfMode}
+          />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div
               onClick={() => setReportType('weekly')}

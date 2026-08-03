@@ -7,6 +7,7 @@ import { generateReportPDFBuffer } from '@/lib/reports/pdf-generator'
 import { generateReportExcelBuffer } from '@/lib/reports/excel-generator'
 import { uploadReportExportFile, getReportExportSignedUrl } from '@/lib/reports/storage'
 import { PlatformType, ReportType } from '@/lib/reports/types'
+import { SupportedLanguageCode, PdfMode } from '@/lib/i18n/languages'
 
 export interface GenerateReportInput {
   companyId: string
@@ -22,6 +23,8 @@ export interface GenerateReportInput {
   executiveSummaryNotes?: string
   marketingNotes?: string
   recommendationsNotes?: string
+  language?: SupportedLanguageCode
+  pdfMode?: PdfMode
 }
 
 export async function generateReportAction(input: GenerateReportInput) {
@@ -99,7 +102,7 @@ export async function generateReportAction(input: GenerateReportInput) {
   // 4. Generate & Store PDF Export
   let pdfSignedUrl = '#'
   try {
-    const pdfBuffer = await generateReportPDFBuffer(snapshot)
+    const pdfBuffer = await generateReportPDFBuffer(snapshot, input.language || 'en', input.pdfMode || 'single')
     const pdfUpload = await uploadReportExportFile(supabase, input.companyId, reportId, 'pdf', pdfBuffer)
     pdfSignedUrl = pdfUpload.signedUrl
 
