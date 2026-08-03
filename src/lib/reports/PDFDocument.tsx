@@ -6,29 +6,34 @@ import { getDictionary } from '@/lib/i18n/translator'
 
 const styles = StyleSheet.create({
   page: {
-    padding: 36,
+    paddingTop: 84,
+    paddingBottom: 48,
+    paddingHorizontal: 36,
     fontFamily: 'Helvetica',
     fontSize: 9,
     color: '#1e293b',
     backgroundColor: '#ffffff'
   },
   header: {
+    position: 'absolute',
+    top: 24,
+    left: 36,
+    right: 36,
     borderBottomWidth: 1.5,
     borderBottomColor: '#2563eb',
     borderBottomStyle: 'solid',
-    paddingBottom: 12,
-    marginBottom: 16,
+    paddingBottom: 8,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start'
   },
   companyName: {
-    fontSize: 18,
+    fontSize: 16,
     fontFamily: 'Helvetica-Bold',
     color: '#0f172a'
   },
   reportTitle: {
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: 'Helvetica-Bold',
     color: '#2563eb',
     marginTop: 2
@@ -129,9 +134,17 @@ const styles = StyleSheet.create({
     flex: 1,
     lineHeight: 1.3
   },
+  recommendationCard: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 0.5,
+    borderColor: '#cbd5e1',
+    borderRadius: 4,
+    padding: 8,
+    marginBottom: 6
+  },
   footer: {
     position: 'absolute',
-    bottom: 24,
+    bottom: 18,
     left: 36,
     right: 36,
     borderTopWidth: 0.5,
@@ -163,8 +176,8 @@ export function SocialReportPDFDocument({ snapshot, language = 'en', pdfMode = '
   return (
     <Document title={`${company.name} - ${report.title}`}>
       <Page size="A4" style={styles.page}>
-        {/* Header */}
-        <View style={styles.header}>
+        {/* Repeating Page Header */}
+        <View style={styles.header} fixed>
           <View>
             <Text style={styles.companyName}>{company.name}</Text>
             <Text style={styles.reportTitle}>{report.title}</Text>
@@ -175,53 +188,57 @@ export function SocialReportPDFDocument({ snapshot, language = 'en', pdfMode = '
           <View style={{ alignItems: 'flex-end' }}>
             <Text style={styles.metaText}>{dict.preparedBy}: {report.preparedBy}</Text>
             <Text style={styles.metaText}>{dict.generatedAt}: {new Date(report.generatedAt).toLocaleDateString()}</Text>
-            <Text style={styles.metaText}>Timezone: {company.timezone}</Text>
+            <Text style={styles.metaText}>Language: {language.toUpperCase()} | {pdfMode === 'bilingual' ? 'Bilingual' : 'Standard'}</Text>
           </View>
         </View>
 
-        {/* Overall KPI Summary Cards */}
-        <Text style={styles.sectionTitle}>{sectionLabel('Overall Performance Summary', dict.overallPerformance)}</Text>
-        <View style={styles.kpiGrid}>
-          <View style={styles.kpiCard}>
-            <Text style={styles.kpiLabel}>{sectionLabel('Total Audience', dict.metrics.audienceTotal)}</Text>
-            <Text style={styles.kpiValue}>{overall.audienceTotal.currentValue.toLocaleString()}</Text>
-            <Text style={styles.kpiSub}>
-              {overall.audienceTotal.isUnavailable ? 'No baseline' : `${overall.audienceTotal.percentageChange}% vs prev`}
-            </Text>
-          </View>
+        {/* Overall KPI Summary Cards (Kept Together) */}
+        <View wrap={false}>
+          <Text style={styles.sectionTitle}>{sectionLabel('Overall Performance Summary', dict.overallPerformance)}</Text>
+          <View style={styles.kpiGrid}>
+            <View style={styles.kpiCard}>
+              <Text style={styles.kpiLabel}>{sectionLabel('Total Audience', dict.metrics.audienceTotal)}</Text>
+              <Text style={styles.kpiValue}>{overall.audienceTotal.currentValue.toLocaleString()}</Text>
+              <Text style={styles.kpiSub}>
+                {overall.audienceTotal.isUnavailable ? 'No baseline' : `${overall.audienceTotal.percentageChange}% vs prev`}
+              </Text>
+            </View>
 
-          <View style={styles.kpiCard}>
-            <Text style={styles.kpiLabel}>{sectionLabel('Total Views', dict.metrics.views)}</Text>
-            <Text style={styles.kpiValue}>{overall.views.currentValue.toLocaleString()}</Text>
-            <Text style={styles.kpiSub}>
-              {overall.views.isUnavailable ? 'No baseline' : `${overall.views.percentageChange}% vs prev`}
-            </Text>
-          </View>
+            <View style={styles.kpiCard}>
+              <Text style={styles.kpiLabel}>{sectionLabel('Total Views', dict.metrics.views)}</Text>
+              <Text style={styles.kpiValue}>{overall.views.currentValue.toLocaleString()}</Text>
+              <Text style={styles.kpiSub}>
+                {overall.views.isUnavailable ? 'No baseline' : `${overall.views.percentageChange}% vs prev`}
+              </Text>
+            </View>
 
-          <View style={styles.kpiCard}>
-            <Text style={styles.kpiLabel}>{sectionLabel('Engagements', dict.metrics.engagements)}</Text>
-            <Text style={styles.kpiValue}>{overall.engagements.currentValue.toLocaleString()}</Text>
-            <Text style={styles.kpiSub}>
-              {overall.engagements.isUnavailable ? 'No baseline' : `${overall.engagements.percentageChange}% vs prev`}
-            </Text>
-          </View>
+            <View style={styles.kpiCard}>
+              <Text style={styles.kpiLabel}>{sectionLabel('Engagements', dict.metrics.engagements)}</Text>
+              <Text style={styles.kpiValue}>{overall.engagements.currentValue.toLocaleString()}</Text>
+              <Text style={styles.kpiSub}>
+                {overall.engagements.isUnavailable ? 'No baseline' : `${overall.engagements.percentageChange}% vs prev`}
+              </Text>
+            </View>
 
-          <View style={styles.kpiCard}>
-            <Text style={styles.kpiLabel}>{sectionLabel('Total Impressions', dict.metrics.impressions)}</Text>
-            <Text style={styles.kpiValue}>{overall.impressions.currentValue.toLocaleString()}</Text>
-            {overall.impressions.isUnavailable ? (
-              <Text style={styles.kpiWarning}>Meta permissions notice</Text>
-            ) : (
-              <Text style={styles.kpiSub}>{overall.impressions.percentageChange}% vs prev</Text>
-            )}
+            <View style={styles.kpiCard}>
+              <Text style={styles.kpiLabel}>{sectionLabel('Total Impressions', dict.metrics.impressions)}</Text>
+              <Text style={styles.kpiValue}>{overall.impressions.currentValue.toLocaleString()}</Text>
+              {overall.impressions.isUnavailable ? (
+                <Text style={styles.kpiWarning}>Meta permissions notice</Text>
+              ) : (
+                <Text style={styles.kpiSub}>{overall.impressions.percentageChange}% vs prev</Text>
+              )}
+            </View>
           </View>
         </View>
 
-        {/* Executive Summary */}
-        <Text style={styles.sectionTitle}>{sectionLabel('Executive Summary', dict.executiveSummary)}</Text>
+        {/* Executive Summary Statements (Individual Item Keep Together) */}
+        <View wrap={false}>
+          <Text style={styles.sectionTitle}>{sectionLabel('Executive Summary', dict.executiveSummary)}</Text>
+        </View>
         <View style={styles.bulletList}>
           {executiveSummary.map(item => (
-            <View key={item.id} style={styles.bulletItem}>
+            <View key={item.id} style={styles.bulletItem} wrap={false}>
               <Text style={styles.bulletDot}>•</Text>
               <Text style={styles.bulletText}>{item.statement}</Text>
             </View>
@@ -229,9 +246,11 @@ export function SocialReportPDFDocument({ snapshot, language = 'en', pdfMode = '
         </View>
 
         {/* Platform Comparison Table */}
-        <Text style={styles.sectionTitle}>{sectionLabel('Platform Overview & Comparison', dict.platformComparison)}</Text>
+        <View wrap={false}>
+          <Text style={styles.sectionTitle}>{sectionLabel('Platform Overview & Comparison', dict.platformComparison)}</Text>
+        </View>
         <View style={styles.table}>
-          <View style={[styles.tableRow, styles.tableHeader]}>
+          <View style={[styles.tableRow, styles.tableHeader]} fixed>
             <Text style={[styles.col, { fontFamily: 'Helvetica-Bold' }]}>Platform</Text>
             <Text style={[styles.col, { fontFamily: 'Helvetica-Bold' }]}>Status</Text>
             <Text style={[styles.col, { fontFamily: 'Helvetica-Bold' }]}>{dict.metrics.audienceTotal}</Text>
@@ -240,15 +259,15 @@ export function SocialReportPDFDocument({ snapshot, language = 'en', pdfMode = '
             <Text style={[styles.col, { fontFamily: 'Helvetica-Bold' }]}>{dict.metrics.contentPublished}</Text>
           </View>
           {Object.entries(platforms).map(([pKey, pData]) => (
-            <View key={pKey} style={styles.tableRow}>
+            <View key={pKey} style={styles.tableRow} wrap={false}>
               <Text style={[styles.col, { textTransform: 'capitalize', fontFamily: 'Helvetica-Bold' }]}>{pKey}</Text>
               <Text style={styles.col}>
-                {pData?.isConnected ? (pData.metrics.impressions.isUnavailable ? dict.status.permissionLimited : dict.status.connected) : dict.status.notConnected}
+                {pData?.isConnected ? (pData.metrics?.impressions?.isUnavailable ? dict.status.permissionLimited : dict.status.connected) : dict.status.notConnected}
               </Text>
-              <Text style={styles.col}>{pData?.metrics.audienceTotal.currentValue.toLocaleString() || '0'}</Text>
-              <Text style={styles.col}>{pData?.metrics.views.currentValue.toLocaleString() || '0'}</Text>
-              <Text style={styles.col}>{pData?.metrics.engagements.currentValue.toLocaleString() || '0'}</Text>
-              <Text style={styles.col}>{pData?.metrics.contentPublished.currentValue || '0'}</Text>
+              <Text style={styles.col}>{pData?.metrics?.audienceTotal?.currentValue?.toLocaleString() || '0'}</Text>
+              <Text style={styles.col}>{pData?.metrics?.views?.currentValue?.toLocaleString() || '0'}</Text>
+              <Text style={styles.col}>{pData?.metrics?.engagements?.currentValue?.toLocaleString() || '0'}</Text>
+              <Text style={styles.col}>{pData?.metrics?.contentPublished?.currentValue || '0'}</Text>
             </View>
           ))}
         </View>
@@ -256,9 +275,11 @@ export function SocialReportPDFDocument({ snapshot, language = 'en', pdfMode = '
         {/* Top Performing Content */}
         {topContent.length > 0 && (
           <>
-            <Text style={styles.sectionTitle}>{sectionLabel('Top Performing Content', dict.topContent)}</Text>
+            <View wrap={false}>
+              <Text style={styles.sectionTitle}>{sectionLabel('Top Performing Content', dict.topContent)}</Text>
+            </View>
             <View style={styles.table}>
-              <View style={[styles.tableRow, styles.tableHeader]}>
+              <View style={[styles.tableRow, styles.tableHeader]} fixed>
                 <Text style={[styles.colWide, { fontFamily: 'Helvetica-Bold' }]}>Title / Excerpt</Text>
                 <Text style={[styles.colSm, { fontFamily: 'Helvetica-Bold' }]}>Platform</Text>
                 <Text style={[styles.colSm, { fontFamily: 'Helvetica-Bold' }]}>{dict.metrics.views}</Text>
@@ -266,8 +287,8 @@ export function SocialReportPDFDocument({ snapshot, language = 'en', pdfMode = '
                 <Text style={[styles.colSm, { fontFamily: 'Helvetica-Bold' }]}>{dict.metrics.comments}</Text>
                 <Text style={[styles.colSm, { fontFamily: 'Helvetica-Bold' }]}>{dict.metrics.engagements}</Text>
               </View>
-              {topContent.slice(0, 5).map(item => (
-                <View key={item.providerContentId} style={styles.tableRow}>
+              {topContent.map(item => (
+                <View key={item.providerContentId} style={styles.tableRow} wrap={false}>
                   <Text style={styles.colWide}>{item.title}</Text>
                   <Text style={[styles.colSm, { textTransform: 'uppercase' }]}>{item.platform}</Text>
                   <Text style={styles.colSm}>{item.views.toLocaleString()}</Text>
@@ -280,34 +301,35 @@ export function SocialReportPDFDocument({ snapshot, language = 'en', pdfMode = '
           </>
         )}
 
-        {/* Recommendations */}
-        <Text style={styles.sectionTitle}>{sectionLabel('Strategic Recommendations', dict.recommendations)}</Text>
+        {/* Strategic Recommendations (Card Keep Together) */}
+        <View wrap={false}>
+          <Text style={styles.sectionTitle}>{sectionLabel('Strategic Recommendations', dict.recommendations)}</Text>
+        </View>
         <View style={styles.bulletList}>
           {recommendations.map(rec => (
-            <View key={rec.id} style={styles.bulletItem}>
-              <Text style={styles.bulletDot}>•</Text>
-              <View style={styles.bulletText}>
-                <Text style={{ fontFamily: 'Helvetica-Bold', color: '#0f172a' }}>
-                  [{rec.priority.toUpperCase()}] {rec.title}:
-                </Text>
-                <Text style={{ marginTop: 2, color: '#334155' }}>{rec.recommendation}</Text>
-              </View>
+            <View key={rec.id} style={styles.recommendationCard} wrap={false}>
+              <Text style={{ fontFamily: 'Helvetica-Bold', color: '#0f172a', marginBottom: 3 }}>
+                [{rec.priority.toUpperCase()}] {rec.title}
+              </Text>
+              <Text style={{ color: '#334155', lineHeight: 1.3 }}>{rec.recommendation}</Text>
             </View>
           ))}
         </View>
 
         {/* Data Availability Notes */}
-        <Text style={styles.sectionTitle}>{sectionLabel('Data Availability & Disclaimers', dict.dataAvailability)}</Text>
+        <View wrap={false}>
+          <Text style={styles.sectionTitle}>{sectionLabel('Data Availability & Disclaimers', dict.dataAvailability)}</Text>
+        </View>
         <View style={styles.bulletList}>
           {dataAvailability.map(item => (
-            <View key={item.key} style={styles.bulletItem}>
+            <View key={item.key} style={styles.bulletItem} wrap={false}>
               <Text style={styles.bulletDot}>-</Text>
               <Text style={[styles.bulletText, { color: '#64748b', fontSize: 8 }]}>{item.message}</Text>
             </View>
           ))}
         </View>
 
-        {/* Footer */}
+        {/* Repeating Page Footer */}
         <View style={styles.footer} fixed>
           <Text>Social Report Pro — Confidential Marketing Performance Report</Text>
           <Text render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
