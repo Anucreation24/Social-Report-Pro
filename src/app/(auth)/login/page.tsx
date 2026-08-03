@@ -119,11 +119,20 @@ export default function LoginPage() {
         </button>
       </form>
 
-      <div className="text-center text-sm text-muted-foreground">
-        Don&apos;t have an account?{' '}
-        <Link href="/register" className="text-primary hover:underline">
-          Register
-        </Link>
+      <div className="text-center text-sm text-muted-foreground space-y-2 pt-2 border-t border-border/40">
+        <div>
+          Don&apos;t have an account?{' '}
+          <Link href="/register" className="text-primary hover:underline font-semibold">
+            Register
+          </Link>
+        </div>
+        <div className="flex justify-center items-center gap-3 text-xs text-muted-foreground pt-1">
+          <Link href="/privacy" className="hover:text-primary transition-colors">Privacy Policy</Link>
+          <span>•</span>
+          <Link href="/terms" className="hover:text-primary transition-colors">Terms of Service</Link>
+          <span>•</span>
+          <Link href="/data-deletion" className="hover:text-primary transition-colors">Data Deletion</Link>
+        </div>
       </div>
     </div>
   )

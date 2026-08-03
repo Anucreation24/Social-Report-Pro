@@ -33,7 +33,13 @@ export async function updateSession(request: NextRequest) {
 
   const path = request.nextUrl.pathname
   const isAuthRoute = ['/login', '/register', '/forgot-password', '/reset-password'].includes(path)
-  const isPublicRoute = path === '/'
+  const isPublicRoute = 
+    path === '/' ||
+    path === '/privacy' ||
+    path === '/terms' ||
+    path === '/data-deletion' ||
+    path.startsWith('/shared/reports/') ||
+    path.startsWith('/api/oauth')
 
   if (!user && !isAuthRoute && !isPublicRoute) {
     const url = request.nextUrl.clone()

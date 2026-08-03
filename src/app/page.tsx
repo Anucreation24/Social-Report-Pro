@@ -1,6 +1,7 @@
 import React from 'react'
 import Link from 'next/link'
 import { ArrowRight, BarChart3, Target, Shield } from 'lucide-react'
+import { siteConfig } from '@/lib/site-config'
 
 export default function Home() {
   return (
@@ -101,8 +102,15 @@ export default function Home() {
       </main>
 
       {/* Footer */}
-      <footer className="relative z-10 border-t border-border/20 py-8 text-center text-xs text-muted-foreground">
-        <p>&copy; {new Date().getFullYear()} Social Report Pro. All rights reserved.</p>
+      <footer className="relative z-10 border-t border-border/20 py-8 text-center text-xs text-muted-foreground space-y-2">
+        <div className="flex flex-wrap justify-center items-center gap-4">
+          <Link href="/privacy" className="hover:text-primary transition-colors">Privacy Policy</Link>
+          <span>•</span>
+          <Link href="/terms" className="hover:text-primary transition-colors">Terms of Service</Link>
+          <span>•</span>
+          <Link href="/data-deletion" className="hover:text-primary transition-colors">Data Deletion</Link>
+        </div>
+        <p>&copy; {new Date().getFullYear()} Social Report Pro ({siteConfig.name}). All rights reserved.</p>
       </footer>
     </div>
   )
